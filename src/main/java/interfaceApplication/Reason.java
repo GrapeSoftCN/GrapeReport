@@ -11,70 +11,76 @@ import esayhelper.formHelper;
 import esayhelper.jGrapeFW_Message;
 import esayhelper.formHelper.formdef;
 
-public class Rtype {
-	private static DBHelper type;
+/**
+ * 举报拒绝/完结事由管理
+ * 
+ *
+ */
+public class Reason {
+	private static DBHelper Reason;
 	private static formHelper form;
 	private JSONObject _obj = new JSONObject();
 
 	static {
-		type = new DBHelper(appsProxy.configValue().get("db").toString(),
-				"reportType");
-		form = type.getChecker();
+		Reason = new DBHelper(appsProxy.configValue().get("db").toString(),
+				"reportReson");
+		form = Reason.getChecker();
 	}
 
 	// 新增
-	public String AddType(String typeInfo) {
-		form.putRule("TypeName", formdef.notNull);
-		JSONObject object = JSONHelper.string2json(typeInfo);
+	@SuppressWarnings("unchecked")
+	public String AddReson(String info) {
+		form.putRule("Rcontent", formdef.notNull);
+		JSONObject object = JSONHelper.string2json(info);
+		object.put("count", 0);
 		if (!form.checkRuleEx(object)) {
 			return resultMessage(1);
 		}
-		if (findByName(object.get("TypeName").toString()) != null) {
+		if (findByName(object.get("Rcontent").toString()) != null) {
 			return resultMessage(2);
 		}
-		String info = type.data(object).insertOnce().toString();
-		return resultMessage(findById(info));
+		String code = Reason.data(object).insertOnce().toString();
+		return resultMessage(findById(code));
 	}
 
 	// 修改
-	public String UpdateType(String id, String typeInfo) {
-		JSONObject object = JSONHelper.string2json(typeInfo);
-		if (object.containsKey("TypeName")) {
-			if (findByName(object.get("TypeName").toString()) != null) {
+	public String UpdateReson(String id, String Info) {
+		JSONObject object = JSONHelper.string2json(Info);
+		if (object.containsKey("Rcontent")) {
+			if (findByName(object.get("Rcontent").toString()) != null) {
 				return resultMessage(2);
 			}
 		}
-		
-		int code = type.eq("_id", new ObjectId(id)).data(object)
+		int code = Reason.eq("_id", new ObjectId(id)).data(object)
 				.update() != null ? 0 : 99;
 		return resultMessage(code, "修改成功");
 	}
 
 	// 删除
-	public String DeleteType(String id) {
-		int code = type.eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
+	public String DeleteReson(String id) {
+		int code = Reason.eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
 		return resultMessage(code, "删除成功");
 	}
 
 	// 批量删除
-	public String DeleteBatchType(String ids) {
+	public String DeleteBatchReson(String ids) {
 		String[] value = ids.split(",");
 		int len = value.length;
-		type.or();
+		Reason.or();
 		for (int i = 0; i < len; i++) {
-			type.eq("_id", new ObjectId(value[i]));
+			Reason.eq("_id", new ObjectId(value[i]));
 		}
-		int code = type.deleteAll() == len ? 0 : 99;
+		int code = Reason.deleteAll() == len ? 0 : 99;
 		return resultMessage(code, "删除成功");
 	}
 
 	// 分页
 	@SuppressWarnings("unchecked")
-	public String PageType(int ids, int pageSize) {
-		JSONArray array = type.page(ids, pageSize);
+	public String PageReson(int ids, int pageSize) {
+		JSONArray array = Reason.desc("count").page(ids, pageSize);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
-				(int) Math.ceil((double) type.count() / pageSize));
+				(int) Math.ceil((double) Reason.count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", array);
@@ -84,24 +90,35 @@ public class Rtype {
 	// 搜索
 	@SuppressWarnings("unchecked")
 	public String search(int ids, int pageSize, String info) {
-		type.like("name",
-				JSONHelper.string2json(info).get("TypeName").toString());
-		JSONArray array = type.dirty().page(ids, pageSize);
+		Reason.like("Rcontent",
+				JSONHelper.string2json(info).get("Rcontent").toString());
+		JSONArray array = Reason.dirty().desc("count").page(ids, pageSize);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
-				(int) Math.ceil((double) type.count() / pageSize));
+				(int) Math.ceil((double) Reason.count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", array);
 		return resultMessage(object);
 	}
 
+	// 事由使用次数+1
+	@SuppressWarnings("unchecked")
+	public String addTime(String name) {
+		Reason.eq("Rcontent", name);
+		JSONObject object = Reason.dirty().find();
+		object.put("count",
+				Integer.parseInt(object.get("count").toString()) + 1);
+		return Reason.data(object).update() != null ? resultMessage(0)
+				: resultMessage(99);
+	}
+
 	public JSONObject findByName(String name) {
-		return type.eq("TypeName", name).find();
+		return Reason.eq("Rcontent", name).find();
 	}
 
 	public JSONObject findById(String id) {
-		return type.eq("_id", new ObjectId(id)).find();
+		return Reason.eq("_id", new ObjectId(id)).find();
 	}
 
 	@SuppressWarnings("unchecked")

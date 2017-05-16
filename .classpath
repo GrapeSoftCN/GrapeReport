@@ -23,11 +23,12 @@
 			<attribute name="org.eclipse.jst.component.dependency" value="/WEB-INF/lib"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="G:/grapeFW/GrapeFW1.17.jar"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8">
 		<attributes>
 			<attribute name="owner.project.facets" value="java"/>
 		</attributes>
 	</classpathentry>
+	<classpathentry kind="lib" path="E:/PT/APPs Jar/new/GrapeCKWord.jar"/>
+	<classpathentry kind="lib" path="C:/Users/win7/Desktop/GrapeFrame/GrapeFWNew/GrapeFW1.17.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>
