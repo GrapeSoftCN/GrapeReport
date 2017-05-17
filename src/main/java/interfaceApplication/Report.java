@@ -1,6 +1,7 @@
 package interfaceApplication;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -12,8 +13,12 @@ import java.util.TimerTask;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.methods.GetMethod;
 import org.bson.types.ObjectId;
+import org.hamcrest.Matcher;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
@@ -29,6 +34,7 @@ import filterword.WordFilter;
 import interrupt.interrupt;
 import nlogger.nlogger;
 import offices.excelHelper;
+import thirdsdk.wechatHelper;
 import esayhelper.formHelper.formdef;
 
 public class Report {
@@ -259,8 +265,8 @@ public class Report {
 	}
 
 	// 查询个人相关的举报件
-	public String searchById(String userid) {
-		JSONArray array = report.eq("userid", userid).limit(20).select();
+	public String searchById(String userid, int no) {
+		JSONArray array = report.eq("userid", userid).limit(no).select();
 		return resultMessage(getImg(array));
 	}
 
@@ -302,7 +308,8 @@ public class Report {
 		}
 		// 发送短信验证码,中断当前操作
 		// 获取随机6位验证码
-		String ckcode = getValidateCode();
+		// String ckcode = getValidateCode();
+		String ckcode = "23456";
 		// 1.发送验证码
 
 		// 2.中断[参数：随机验证码，手机号，下一步操作，appid]
@@ -315,6 +322,7 @@ public class Report {
 
 	// 恢复当前操作
 	public String resume(String ckcode, String phone) {
+		ckcode = "23456";
 		int code = interrupt._resume(ckcode, phone, "13");
 		if (code == 0) {
 			return resultMessage(4);
@@ -322,7 +330,7 @@ public class Report {
 		if (code == 1) {
 			return resultMessage(5);
 		}
-		return resultMessage(0, "举报信息发送成功");
+		return resultMessage(0, "操作成功");
 	}
 
 	// 验证内容是否含有敏感字符串
@@ -333,7 +341,77 @@ public class Report {
 		return resultMessage(0, "不含敏感字符串");
 	}
 
-	private JSONArray getImg(JSONArray array){
+	// 获取用户openid，实名认证
+	@SuppressWarnings("unchecked")
+	public String getUserId(String code) {
+		System.out.println("111");
+		wechatHelper helper = new wechatHelper("wx98fc10d9ac9e0953",
+				"63890fa2402f4e6aff5b86d327bf4a37");
+		JSONObject object = new JSONObject();
+//		String openid = getopid(code);
+		String openid = helper.getOpenID(code);
+		System.out.println(openid);
+		// 将获取到的openid与库表中的openid进行比对，若存在已绑定，否则未绑定
+		String message = appsProxy.proxyCall("123.57.214.226:801",
+				"16/user/FindOpenId/" + openid, null, "").toString();
+		if (message == null) {
+			object.put("msg", "已实名认证");
+			object.put("openid", openid);
+			return jGrapeFW_Message.netMSG(0, object.toString());
+		}
+		object.put("msg", "未实名认证");
+		object.put("openid", openid);
+		return jGrapeFW_Message.netMSG(1, object.toString());
+	}
+
+	// 获取openid
+	private String getopid(String code) {
+		String openid = "";
+		String url = "https://api.weixin.qq.com/sns/oauth2/access_token?appid=wx98fc10d9ac9e0953&secret=63890fa2402f4e6aff5b86d327bf4a37&code=" + code
+				+ "&grant_type=authorization_code";
+		try {
+			HttpClient httpClient = new HttpClient();
+			GetMethod getMethod = new GetMethod(url);
+			int execute = httpClient.executeMethod(getMethod);
+			String getResponse = getMethod.getResponseBodyAsString();
+			openid = JSONHelper.string2json(getResponse).get("openid")
+					.toString();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return openid;
+	}
+
+	// 实名认证
+	public String Certification(String info) {
+		JSONObject object = JSONHelper.string2json(info);
+		if (!checkPhone(object.get("phone").toString())) {
+			return resultMessage(5);
+		}
+		if (!checkCard(object)) {
+			return resultMessage(6);
+		}
+		// 发送短信验证码,中断当前操作
+		// 获取随机6位验证码
+		// String ckcode = getValidateCode();
+		String ckcode = "23456";
+		// 1.发送验证码
+
+		// 2.中断[参数：随机验证码，手机号，下一步操作，appid]
+		String nextstep = object.toString().replace("\"", "\\\"");
+		boolean flag = interrupt._break(ckcode,
+				object.get("InformantPhone").toString(),
+				"16/user/insertOpenId/s:" + nextstep, "13");
+		return flag ? resultMessage(0, "验证码发送成功") : resultMessage(99);
+	}
+
+	private boolean checkCard(JSONObject object) {
+		form.putRule("IDCard", formdef.PersonID);
+		return form.checkRuleEx(object);
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONArray getImg(JSONArray array) {
 		JSONArray array2 = new JSONArray();
 		for (int i = 0; i < array.size(); i++) {
 			JSONObject object = (JSONObject) array.get(i);
@@ -341,6 +419,7 @@ public class Report {
 		}
 		return array2;
 	}
+
 	@SuppressWarnings("unchecked")
 	private JSONObject getImg(JSONObject object) {
 		List<String> list = new ArrayList<String>();
