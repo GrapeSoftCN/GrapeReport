@@ -1,7 +1,7 @@
 package test;
 
 import httpServer.booter;
-import interfaceApplication.Report;
+import interfaceApplication.Reports;
 
 public class testReport {
 
