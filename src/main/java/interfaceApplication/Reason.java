@@ -5,6 +5,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 import apps.appsProxy;
+import database.db;
 import esayhelper.DBHelper;
 import esayhelper.JSONHelper;
 import esayhelper.formHelper;
@@ -26,7 +27,9 @@ public class Reason {
 				"reportReson");
 		form = Reason.getChecker();
 	}
-
+	private db bind(){
+		return Reason.bind(String.valueOf(appsProxy.appid()));
+	}
 	// 新增
 	@SuppressWarnings("unchecked")
 	public String AddReson(String info) {
@@ -39,7 +42,7 @@ public class Reason {
 		if (findByName(object.get("Rcontent").toString()) != null) {
 			return resultMessage(2);
 		}
-		String code = Reason.data(object).insertOnce().toString();
+		String code = bind().data(object).insertOnce().toString();
 		return resultMessage(findById(code));
 	}
 
@@ -51,14 +54,14 @@ public class Reason {
 				return resultMessage(2);
 			}
 		}
-		int code = Reason.eq("_id", new ObjectId(id)).data(object)
+		int code = bind().eq("_id", new ObjectId(id)).data(object)
 				.update() != null ? 0 : 99;
 		return resultMessage(code, "修改成功");
 	}
 
 	// 删除
 	public String DeleteReson(String id) {
-		int code = Reason.eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
+		int code = bind().eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
 		return resultMessage(code, "删除成功");
 	}
 
@@ -66,21 +69,21 @@ public class Reason {
 	public String DeleteBatchReson(String ids) {
 		String[] value = ids.split(",");
 		int len = value.length;
-		Reason.or();
+		bind().or();
 		for (int i = 0; i < len; i++) {
-			Reason.eq("_id", new ObjectId(value[i]));
+			bind().eq("_id", new ObjectId(value[i]));
 		}
-		int code = Reason.deleteAll() == len ? 0 : 99;
+		int code = bind().deleteAll() == len ? 0 : 99;
 		return resultMessage(code, "删除成功");
 	}
 
 	// 分页
 	@SuppressWarnings("unchecked")
 	public String PageReson(int ids, int pageSize) {
-		JSONArray array = Reason.desc("count").page(ids, pageSize);
+		JSONArray array = bind().desc("count").page(ids, pageSize);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
-				(int) Math.ceil((double) Reason.count() / pageSize));
+				(int) Math.ceil((double) bind().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", array);
@@ -90,12 +93,12 @@ public class Reason {
 	// 搜索
 	@SuppressWarnings("unchecked")
 	public String search(int ids, int pageSize, String info) {
-		Reason.like("Rcontent",
+		bind().like("Rcontent",
 				JSONHelper.string2json(info).get("Rcontent").toString());
-		JSONArray array = Reason.dirty().desc("count").page(ids, pageSize);
+		JSONArray array = bind().dirty().desc("count").page(ids, pageSize);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
-				(int) Math.ceil((double) Reason.count() / pageSize));
+				(int) Math.ceil((double) bind().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", array);
@@ -105,20 +108,20 @@ public class Reason {
 	// 事由使用次数+1
 	@SuppressWarnings("unchecked")
 	public String addTime(String name) {
-		Reason.eq("Rcontent", name);
-		JSONObject object = Reason.dirty().find();
+		bind().eq("Rcontent", name);
+		JSONObject object = bind().dirty().find();
 		object.put("count",
 				Integer.parseInt(object.get("count").toString()) + 1);
-		return Reason.data(object).update() != null ? resultMessage(0)
+		return bind().data(object).update() != null ? resultMessage(0)
 				: resultMessage(99);
 	}
 
 	public JSONObject findByName(String name) {
-		return Reason.eq("Rcontent", name).find();
+		return bind().eq("Rcontent", name).find();
 	}
 
 	public JSONObject findById(String id) {
-		return Reason.eq("_id", new ObjectId(id)).find();
+		return bind().eq("_id", new ObjectId(id)).find();
 	}
 
 	@SuppressWarnings("unchecked")

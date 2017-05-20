@@ -5,6 +5,7 @@ import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 import apps.appsProxy;
+import database.db;
 import esayhelper.DBHelper;
 import esayhelper.JSONHelper;
 import esayhelper.formHelper;
@@ -22,6 +23,10 @@ public class Rtype {
 		form = type.getChecker();
 	}
 
+	private db bind() {
+		return type.bind(String.valueOf(appsProxy.appid()));
+	}
+
 	// 新增
 	public String AddType(String typeInfo) {
 		form.putRule("TypeName", formdef.notNull);
@@ -32,7 +37,7 @@ public class Rtype {
 		if (findByName(object.get("TypeName").toString()) != null) {
 			return resultMessage(2);
 		}
-		String info = type.data(object).insertOnce().toString();
+		String info = bind().data(object).insertOnce().toString();
 		return resultMessage(findById(info));
 	}
 
@@ -44,15 +49,15 @@ public class Rtype {
 				return resultMessage(2);
 			}
 		}
-		
-		int code = type.eq("_id", new ObjectId(id)).data(object)
+
+		int code = bind().eq("_id", new ObjectId(id)).data(object)
 				.update() != null ? 0 : 99;
 		return resultMessage(code, "修改成功");
 	}
 
 	// 删除
 	public String DeleteType(String id) {
-		int code = type.eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
+		int code = bind().eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
 		return resultMessage(code, "删除成功");
 	}
 
@@ -60,48 +65,48 @@ public class Rtype {
 	public String DeleteBatchType(String ids) {
 		String[] value = ids.split(",");
 		int len = value.length;
-		type.or();
+		bind().or();
 		for (int i = 0; i < len; i++) {
-			type.eq("_id", new ObjectId(value[i]));
+			bind().eq("_id", new ObjectId(value[i]));
 		}
-		int code = type.deleteAll() == len ? 0 : 99;
+		int code = bind().deleteAll() == len ? 0 : 99;
 		return resultMessage(code, "删除成功");
 	}
 
 	// 分页
 	@SuppressWarnings("unchecked")
 	public String PageType(int ids, int pageSize) {
-		JSONArray array = type.page(ids, pageSize);
+		JSONArray array = bind().page(ids, pageSize);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
-				(int) Math.ceil((double) type.count() / pageSize));
+				(int) Math.ceil((double) bind().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", array);
 		return resultMessage(object);
 	}
 
-	// 搜索
+	// 条件分页
 	@SuppressWarnings("unchecked")
 	public String search(int ids, int pageSize, String info) {
-		type.like("name",
+		bind().like("name",
 				JSONHelper.string2json(info).get("TypeName").toString());
-		JSONArray array = type.dirty().page(ids, pageSize);
+		JSONArray array = bind().dirty().page(ids, pageSize);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
-				(int) Math.ceil((double) type.count() / pageSize));
+				(int) Math.ceil((double) bind().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", array);
 		return resultMessage(object);
 	}
 
-	public JSONObject findByName(String name) {
-		return type.eq("TypeName", name).find();
+	private JSONObject findByName(String name) {
+		return bind().eq("TypeName", name).find();
 	}
 
-	public JSONObject findById(String id) {
-		return type.eq("_id", new ObjectId(id)).find();
+	private JSONObject findById(String id) {
+		return bind().eq("_id", new ObjectId(id)).find();
 	}
 
 	@SuppressWarnings("unchecked")

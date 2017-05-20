@@ -22,7 +22,7 @@ public class Report {
 	public Report() {
 		map.put("time", String.valueOf(TimeHelper.nowMillis()));
 		map.put("state", 0); // 0：已受理；1：处理中；2：已处理；3：被拒绝
-		map.put("read", 0);
+		map.put("type", 0);
 		map.put("isdelete", 0);
 		map.put("mode", 0);
 		map.put("reson", "");
@@ -64,7 +64,7 @@ public class Report {
 	}
 
 	// 模糊查询
-	public String search(int ids, int pageSize, String info) {
+	public String PageByReport(int ids, int pageSize, String info) {
 		return model.page(ids, pageSize, JSONHelper.string2json(info));
 	}
 
@@ -115,8 +115,8 @@ public class Report {
 	}
 
 	// 查询含有反馈信息
-	public String ShowFeed(String userid, int no) {
-		return model.Show(userid, no);
+	public String search(int ids,int pageSize,String info) {
+		return model.find(ids, pageSize, JSONHelper.string2json(info));
 	}
 
 	// 导出举报件
@@ -146,7 +146,7 @@ public class Report {
 
 	// 实名认证
 	public String Certification(String info) {
-		return model.resultMessage(model.Certify(JSONHelper.string2json(info)),
+		return model.resultMessage(model.Certify(info),
 				"验证码发送成功");
 	}
 
