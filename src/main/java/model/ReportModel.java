@@ -12,13 +12,8 @@ import org.bson.types.ObjectId;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-import com.sun.mail.handlers.message_rfc822;
-
-import apps.appIns;
 import apps.appsProxy;
-import cache.redis;
 import database.db;
-import esayhelper.CacheHelper;
 import esayhelper.DBHelper;
 import esayhelper.JSONHelper;
 import esayhelper.StringHelper;
@@ -33,32 +28,41 @@ import nlogger.nlogger;
 import offices.excelHelper;
 import session.session;
 import sms.ruoyaMASDB;
-import thirdsdk.wechatHelper;
-import thirdsdk.wechatModel;
 
 public class ReportModel {
 	private static DBHelper report;
 	private static formHelper form;
 	private JSONObject _obj = new JSONObject();
 	private int count = 0;
-	private static int appid = 0;
+	private static int appid = appsProxy.appid();
 	private String host = "123.57.214.226:801";
-	private wechatHelper helper = new wechatHelper("wx604cf5644f5c216b",
-			"f93d37ac273c3b313850848d771e5e27");
+	// private wechatHelper helper = new wechatHelper("wx604cf5644f5c216b",
+	// "f93d37ac273c3b313850848d771e5e27");
 
 	static {
 		report = new DBHelper(appsProxy.configValue().get("db").toString(),
 				"reportInfo");
-		appid = appsProxy.appid();
 		form = report.getChecker();
 	}
 
 	private db bind() {
-		return report.bind(String.valueOf(appsProxy.appid()));
+		return report.bind(appsProxy.appid()+"");
 	}
 
 	// 新增
 	public String Add(JSONObject object) {
+		// 判断用户是否被封号
+		String message = appsProxy
+				.proxyCall(host,
+						appid + "/16/wechatUser/FindOpenId/"
+								+ object.get("userid").toString(),
+						null, "")
+				.toString();
+		String msg = JSONHelper.string2json(message).get("message").toString();
+		if (("1").equals(
+				JSONHelper.string2json(msg).get("isdelete").toString())) {
+			return resultMessage(9);
+		}
 		if (!(object.get("content").toString().length() <= 500)) {
 			return resultMessage(6);
 		}
@@ -225,9 +229,12 @@ public class ReportModel {
 				.toString();
 		int code = bind().eq("_id", new ObjectId(id)).data(reasons)
 				.update() != null ? 0 : 99;
-		// 发送至用户微信或短信
-		// replyByWechat("你的举报件已处理完成，处理信息为：" +
-		// reasons.get("reason").toString());
+		if (code == 0) {
+			// 发送短信只举报人
+			SendSMS(id);
+			// 发送微信至举报人
+
+		}
 		return code;
 	}
 
@@ -251,52 +258,51 @@ public class ReportModel {
 				.toString();
 		int code = bind().eq("_id", new ObjectId(id)).data(reasons)
 				.update() != null ? 0 : 99;
-		// if (code==0) {
-		// // 根据id获取用户userid即openid
-		// String userid = JSONHelper.string2json(SearchById(id)).get("userid")
-		// .toString();
-		// JSONObject object = new JSONObject();
-		// object.put("content",
-		// "你的举报件已被拒绝处理，处理信息为：" + reasons.get("reason").toString());
-		// replyByWechat(userid,object);
-		// }
+		if (code == 0) {
+			// 发送短信只举报人
+			SendSMS(id);
+			// 发送微信至举报人
+		}
 		return code;
 	}
 
-	// 定时删除被拒绝的举报件（每5天删除被拒绝的任务）
-	// public String TimerDelete() {
-	// int delay = 0;
-	// int period = 5;
-	// service.scheduleAtFixedRate(new TimerTask() {
-	// @Override
-	// public void run() {
-	// nlogger.logout(DelReport());
-	// }
-	// }, delay, period, TimeUnit.DAYS);
-	// return "start:" + new Date();
+	// 微信回复举报人
+	// public String replyByWechat(String userid, JSONObject content) {
+	// JSONArray array = new JSONArray();
+	// JSONObject object = new JSONObject();
+	// object.put("openid", userid);
+	// array.add(object);
+	// JSONObject obj = helper.send2all(array, content,
+	// wechatModel.MSGTYPE_TEXT);
+	// return obj != null ? resultMessage(0) : resultMessage(99);
 	// }
 
-	// 微信回复举报人
-	@SuppressWarnings("unchecked")
-	public String replyByWechat(String userid, JSONObject content) {
-		JSONArray array = new JSONArray();
-		JSONObject object = new JSONObject();
-		object.put("openid", userid);
-		array.add(object);
-		JSONObject obj = helper.send2all(array, content,
-				wechatModel.MSGTYPE_TEXT);
-		return obj != null ? resultMessage(0) : resultMessage(99);
+	// 发送处理件短信至举报人
+	private void SendSMS(String id) {
+		String message = SearchById(id);
+		String msg = JSONHelper.string2json(message).get("message").toString();
+		JSONObject object = JSONHelper.string2json(msg);
+		if (object.containsKey("InformantPhone")) {
+			String phone = object.get("InformantPhone").toString();
+			String text = "";
+			if ("3".equals(object.get("state").toString())) {
+				text = "您举报的" + object.get("content").toString() + "已被拒绝,"
+						+ "拒绝理由为：" + object.get("reason").toString();
+			}
+			if ("2".equals(object.get("state").toString())) {
+				text = "您举报的" + object.get("content").toString() + "已处理完成";
+			}
+			ruoyaMASDB.sendSMS(phone, text);
+		}
 	}
 
-	// 发送验证短信
 	@SuppressWarnings("unchecked")
-	private int SendVerity(String phone, String text) {
-		redis redis = new redis(appsProxy.configValue().get("cache").toString());
+	public int SendVerity(String phone, String text) {
+		session session = new session();
 		String time = "";
 		String currenttime = TimeHelper.stampToDate(TimeHelper.nowMillis())
 				.split(" ")[0];
 		int count = 0;
-		session session = new session();
 		JSONObject object = new JSONObject();
 		if (session.get(phone) != null) {
 			System.out.println(session.get(phone).toString());
@@ -314,13 +320,7 @@ public class ReportModel {
 		object.put("count", count + "");
 		object.put("time", TimeHelper.nowMillis());
 		session.setget(phone, object);
-		redis.setExpire(phone, -1);
 		return tip != null ? 0 : 99;
-	}
-
-	// 发送短信至举报人，验证短信
-	public String SendSMS(String phone, String text) {
-		return null;
 	}
 
 	// 查询个人相关的举报件
@@ -330,17 +330,22 @@ public class ReportModel {
 		return resultMessage(getImg(array));
 	}
 
-	public String count(String userid) {
+	public String counts(String userid) {
 		long count = bind().eq("userid", userid).count();
 		return resultMessage(0, String.valueOf(count));
 	}
 
-	// 查询含有反馈信息的举报件
-	public String Show(String userid, int no) {
-		JSONArray array = bind().and().eq("userid", userid).ne("state", 0)
-				.limit(no).select();
-		return resultMessage(getImg(array));
+	public String feed(String userid) {
+		long count = bind().eq("userid", userid).ne("state", 0).count();
+		return resultMessage(0, String.valueOf(count));
 	}
+
+	// 查询含有反馈信息的举报件
+	// public String Show(String userid, int no) {
+	// JSONArray array = bind().and().eq("userid", userid).ne("state", 0)
+	// .limit(no).select();
+	// return resultMessage(getImg(array));
+	// }
 
 	// 导出举报件
 	public String print(String info) {
@@ -351,8 +356,17 @@ public class ReportModel {
 		return resultMessage(0, file.toString());
 	}
 
+	// 显示举报信息，包含上一篇，下一篇
+	@SuppressWarnings("unchecked")
 	public String SearchById(String id) {
-		return resultMessage(getImg(bind().eq("_id", new ObjectId(id)).find()));
+		JSONObject object = bind().eq("_id", new ObjectId(id)).find();
+		JSONObject preobj = find(object.get("time").toString(), "<");
+		JSONObject nextobj = find(object.get("time").toString(), ">");
+		object.put("previd", getpnReport(preobj).get("id"));
+		object.put("prevname", getpnReport(preobj).get("name"));
+		object.put("nextid", getpnReport(nextobj).get("id"));
+		object.put("nextname", getpnReport(nextobj).get("name"));
+		return resultMessage(getImg(object));
 	}
 
 	public String insert(JSONObject info) {
@@ -376,8 +390,18 @@ public class ReportModel {
 		// 获取随机6位验证码
 		String ckcode = getValidateCode();
 		// 1.发送验证码
-		int code = SendVerity(object.get("phone").toString(),
-				"您的验证码为：" + ckcode);
+		String text = "您的验证码为：" + ckcode;
+		String message = appsProxy
+				.proxyCall(
+						host, "/45/SMS/SendVerity/"
+								+ object.get("phone").toString() + "/" + text,
+						null, "")
+				.toString();
+		long errorcode = (long) JSONHelper.string2json(message)
+				.get("errorcode");
+		int code = Integer.parseInt(String.valueOf(errorcode));
+		// int code = SendVerity(object.get("phone").toString(),
+		// "您的验证码为：" + ckcode);
 		if (code == 0) {
 			String nextstep = object.toString().replace("\"", "\\\"");
 			boolean flag = interrupt._break(ckcode,
@@ -406,7 +430,6 @@ public class ReportModel {
 			}
 			return 0;
 		}
-
 		return 99;
 	}
 
@@ -420,10 +443,11 @@ public class ReportModel {
 
 	// 获取用户openid，实名认证
 	@SuppressWarnings("unchecked")
-	public String getId(String code) {
+	public String getId(String code,String url) {
 		// 获取微信签名
-		String signMsg = appsProxy.proxyCall(host,
-				appid + "/30/Wechat/getSignature", null, "").toString();
+		String signMsg = appsProxy
+				.proxyCall(host, appid + "/30/Wechat/getSignature/"+url, null, "")
+				.toString();
 		String sign = JSONHelper.string2json(signMsg).get("message").toString();
 		JSONObject object = new JSONObject();
 		String openid = appsProxy.proxyCall(host,
@@ -435,7 +459,7 @@ public class ReportModel {
 		String message = appsProxy.proxyCall(host,
 				appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
 				.toString();
-		nlogger.logout("message:"+message);
+		nlogger.logout("message:" + message);
 		String tip = JSONHelper.string2json(message).get("message").toString();
 		if (!("").equals(tip)) {
 			object.put("msg", "已实名认证");
@@ -459,26 +483,75 @@ public class ReportModel {
 		if (!object.containsKey("openid")) {
 			return 8;
 		}
-		if (!checkPhone(object.get("phone").toString())) {
+		String phone = object.get("phone").toString();
+		if (!checkPhone(phone)) {
 			return 5;
 		}
 		// 发送短信验证码,中断当前操作
 		// 获取随机6位验证码
 		String ckcode = getValidateCode();
 		// 1.发送验证码
+		// String text = "您的验证码为：" + ckcode;
+
 		int code = SendVerity(object.get("phone").toString(),
 				"您的验证码为：" + ckcode);
-//		int code = 0;
 		if (code == 0) {
-			String nextstep = appid+"/16/wechatUser/insertOpenId/" + info.replace("\"", "\\\"");
+			String nextstep = appid + "/16/wechatUser/insertOpenId/" + info;
 			// 2.中断[参数：随机验证码，手机号，下一步操作，appid]
-			boolean flag = interrupt._break(ckcode,
-					object.get("phone").toString(),
-					nextstep,
-					appsProxy.appid()+"");
+			boolean flag = interrupt._break(ckcode, phone, nextstep,
+					appid + "");
 			code = flag ? 0 : 99;
 		}
 		return code;
+	}
+
+	// 用户封号
+	@SuppressWarnings("unchecked")
+	public String UserKick(String openid, JSONObject object) {
+		if (!object.containsKey("isdelete")) {
+			object.put("isdelete", "1");
+		}
+		if (!object.containsKey("time")) {
+			object.put("time", TimeHelper.nowMillis() + "");
+		}
+		return appsProxy.proxyCall(host, appid + "/16/wechatUser/KickUser/"
+				+ openid + "/" + object.toString(), null, "").toString();
+	}
+
+	// 解封
+	public String UserUnKick() {
+		return appsProxy
+				.proxyCall(host, appid + "/16/wechatUser/unkick/", null, "")
+				.toString();
+	}
+
+	// 获取举报信息[上一条，下一条显示]
+	@SuppressWarnings("unchecked")
+	private JSONObject getpnReport(JSONObject object) {
+		String id = null;
+		String name = null;
+		JSONObject object2 = new JSONObject();
+		if (object != null) {
+			JSONObject obj = (JSONObject) object.get("_id");
+			id = obj.get("$oid").toString();
+			name = object.get("content").toString();
+			object2.put("id", id);
+			object2.put("name", name);
+		}
+		return object2;
+	}
+
+	private JSONObject find(String time, String logic) {
+		if (time.contains("$numberLong")) {
+			JSONObject object = JSONHelper.string2json(time);
+			time = object.get("$numberLong").toString();
+		}
+		if (logic == "<") {
+			bind().lt("time", time).desc("time");
+		} else {
+			bind().gt("time", time).asc("time");
+		}
+		return bind().find();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -506,10 +579,34 @@ public class ReportModel {
 		if (object.containsKey("attr4")) {
 			list = getImgUrl(list, object.get("attr4").toString());
 		}
+		// 获取举报类型
+		if (object.containsKey("type")) {
+			object = getType(object);
+		}
 		if (list.size() != 0) {
 			object.put("image", StringHelper.join(list));
 		} else {
 			object.put("image", "");
+		}
+		return object;
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONObject getType(JSONObject object) {
+		if ("0".equals(object.get("type").toString())) {
+			object.put("ReportType", "");
+		} else {
+			String message = appsProxy
+					.proxyCall(host,
+							appsProxy.appid() + "/45/Rtype/findById/"
+									+ object.get("type").toString(),
+							null, "")
+					.toString();
+			String msg = JSONHelper.string2json(message).get("message")
+					.toString();
+			msg = JSONHelper.string2json(msg).get("records").toString();
+			object.put("ReportType",
+					JSONHelper.string2json(msg).get("TypeName").toString());
 		}
 		return object;
 	}
@@ -521,7 +618,9 @@ public class ReportModel {
 		String url = appsProxy
 				.proxyCall(host, appid + "/24/Files/geturl/" + imgId, null, "")
 				.toString();
-		list.add(url);
+		if (!("").equals(url)) {
+			list.add(url);
+		}
 		return list;
 	}
 
@@ -612,7 +711,7 @@ public class ReportModel {
 			msg = "信息不完整";
 			break;
 		case 9:
-			msg = "今日短信次数已达上线";
+			msg = "没有权限";
 			break;
 		case 10:
 			msg = "参数格式错误";

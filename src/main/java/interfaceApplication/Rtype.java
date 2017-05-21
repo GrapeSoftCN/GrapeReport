@@ -38,7 +38,7 @@ public class Rtype {
 			return resultMessage(2);
 		}
 		String info = bind().data(object).insertOnce().toString();
-		return resultMessage(findById(info));
+		return findById(info);
 	}
 
 	// 修改
@@ -105,8 +105,8 @@ public class Rtype {
 		return bind().eq("TypeName", name).find();
 	}
 
-	private JSONObject findById(String id) {
-		return bind().eq("_id", new ObjectId(id)).find();
+	public String findById(String id) {
+		return resultMessage(bind().eq("_id", new ObjectId(id)).find());
 	}
 
 	@SuppressWarnings("unchecked")

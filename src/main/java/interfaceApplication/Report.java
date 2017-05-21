@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.json.simple.JSONObject;
 
+import apps.appsProxy;
 import esayhelper.JSONHelper;
 import esayhelper.TimeHelper;
 import model.ReportModel;
@@ -25,7 +26,7 @@ public class Report {
 		map.put("type", 0);
 		map.put("isdelete", 0);
 		map.put("mode", 0);
-		map.put("reson", "");
+		map.put("reason", "");
 		map.put("handletime", "");
 		map.put("completetime", "");
 		map.put("refusetime", "");
@@ -109,13 +110,17 @@ public class Report {
 		return model.search(userid, no);
 	}
 
-	// 查询个人相关的举报件的总数
-	public String CountById(String userid) {
-		return model.count(userid);
+	public String FeedCount(String userid) {
+		return model.feed(userid);
 	}
 
-	// 查询含有反馈信息
-	public String search(int ids,int pageSize,String info) {
+	// 查询个人相关的举报件的总数
+	public String CountById(String userid) {
+		return model.counts(userid);
+	}
+
+	// 模糊查询
+	public String search(int ids, int pageSize, String info) {
 		return model.find(ids, pageSize, JSONHelper.string2json(info));
 	}
 
@@ -140,14 +145,13 @@ public class Report {
 	}
 
 	// 获取用户openid，实名认证
-	public String getUserId(String code) {
-		return model.getId(code);
+	public String getUserId(String code,String url) {
+		return model.getId(code,url);
 	}
 
 	// 实名认证
 	public String Certification(String info) {
-		return model.resultMessage(model.Certify(info),
-				"验证码发送成功");
+		return model.resultMessage(model.Certify(info), "验证码发送成功");
 	}
 
 	// 定时任务，定时删除被拒绝的举报件（每5天删除被拒绝的任务）
@@ -158,9 +162,26 @@ public class Report {
 			@Override
 			public void run() {
 				model.Delete();
-				// nlogger.logout(model.Delete()!=0?"删除成功":"删除失败");
 			}
 		}, delay, period, TimeUnit.DAYS);
-		return "start:" + new Date();
+		return "currentTime:" + new Date();
+	}
+
+	// 对用户进行封号
+	public String kick(String openid, String info) {
+		return model.UserKick(openid, JSONHelper.string2json(info));
+	}
+
+	// 定时解封
+	public String Unkick(String openid, String info) {
+		int delay = 0;
+		int period = 1;
+		service.scheduleAtFixedRate(new TimerTask() {
+			@Override
+			public void run() {
+				model.UserUnKick();
+			}
+		}, delay, period, TimeUnit.DAYS);
+		return "currentTime:" + new Date();
 	}
 }
