@@ -1,16 +1,21 @@
 package model;
 
 import java.io.File;
+import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Base64.Decoder;
 import java.util.Map.Entry;
 
 import org.bson.types.ObjectId;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
+
+import com.mongodb.util.JSON;
+import com.mysql.fabric.xmlrpc.base.Array;
 
 import apps.appsProxy;
 import database.db;
@@ -26,6 +31,7 @@ import filterword.WordFilter;
 import interrupt.interrupt;
 import nlogger.nlogger;
 import offices.excelHelper;
+import security.codec;
 import session.session;
 import sms.ruoyaMASDB;
 
@@ -33,9 +39,10 @@ public class ReportModel {
 	private static DBHelper report;
 	private static formHelper form;
 	private JSONObject _obj = new JSONObject();
-	private int count = 0;
 	private static int appid = appsProxy.appid();
 	private String host = "123.57.214.226:801";
+	private List<String> imgList = new ArrayList<>();
+	private List<String> videoList = new ArrayList<>();
 	// private wechatHelper helper = new wechatHelper("wx604cf5644f5c216b",
 	// "f93d37ac273c3b313850848d771e5e27");
 
@@ -46,29 +53,38 @@ public class ReportModel {
 	}
 
 	private db bind() {
-		return report.bind(appsProxy.appid()+"");
+		return report.bind(appid + "");
 	}
 
 	// 新增
-	public String Add(JSONObject object) {
-		// 判断用户是否被封号
-		String message = appsProxy
-				.proxyCall(host,
-						appid + "/16/wechatUser/FindOpenId/"
-								+ object.get("userid").toString(),
-						null, "")
-				.toString();
-		String msg = JSONHelper.string2json(message).get("message").toString();
-		if (("1").equals(
-				JSONHelper.string2json(msg).get("isdelete").toString())) {
-			return resultMessage(9);
-		}
+	public String Add(String infos) {
+		JSONObject object = JSONHelper.string2json(infos);
 		if (!(object.get("content").toString().length() <= 500)) {
 			return resultMessage(6);
 		}
 		int mode = Integer.parseInt(object.get("mode").toString());
 		String info = "";
 		if (mode == 0) {
+			// 判断用户是否被封号
+			String message = appsProxy
+					.proxyCall(host,
+							appid + "/16/wechatUser/FindOpenId/"
+									+ object.get("userid").toString(),
+							null, "")
+					.toString();
+			String msg = JSONHelper.string2json(message).get("message")
+					.toString();
+			if (("").equals(msg)) {
+				session session = new session();
+				session.setget(object.get("userid").toString(),
+						object.toString());
+				return resultMessage(12);
+			}
+			if (("1").equals(
+					JSONHelper.string2json(msg).get("isdelete").toString())) {
+				return resultMessage(9);
+			}
+
 			info = RealName(object);
 			if (info == null) {
 				System.out.println("www");
@@ -118,18 +134,30 @@ public class ReportModel {
 		int code = bind().deleteAll() == len ? 0 : 99;
 		return code;
 	}
-
 	// 分页
 	@SuppressWarnings("unchecked")
 	public String page(int ids, int pageSize) {
-		JSONArray array = bind().page(ids, pageSize);
+		JSONArray array = bind().desc("time").page(ids, pageSize);
 		JSONObject object = new JSONObject();
+		 JSONArray array2 = dencode(array); //获取举报信息图片或者视频等
 		object.put("totalSize",
 				(int) Math.ceil((double) bind().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
-		object.put("data", getImg(array));
+		object.put("data", getImg(array2));
 		return resultMessage(object);
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONArray dencode(JSONArray array) {
+		JSONArray arry = new JSONArray();
+		for (int i = 0; i < array.size(); i++) {
+			JSONObject object = (JSONObject) array.get(i);
+			object.put("content",
+					codec.decodebase64(object.get("content").toString()));
+			arry.add(object);
+		}
+		return arry;
 	}
 
 	// 条件分页
@@ -143,13 +171,14 @@ public class ReportModel {
 			bind().eq(obj.toString(), objects.get(obj.toString()));
 
 		}
-		JSONArray array = bind().dirty().page(ids, pageSize);
+		JSONArray array = bind().dirty().desc("time").page(ids, pageSize);
+		 JSONArray array2 = dencode(array);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
 				(int) Math.ceil((double) bind().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
-		object.put("data", getImg(array));
+		object.put("data", getImg(array2));
 		return resultMessage(object);
 	}
 
@@ -161,12 +190,13 @@ public class ReportModel {
 			bind().like(obj.toString(), objects.get(obj.toString()));
 		}
 		JSONArray array = bind().dirty().page(ids, pageSize);
+		 JSONArray array2 = dencode(array);
 		JSONObject object = new JSONObject();
 		object.put("totalSize",
 				(int) Math.ceil((double) bind().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
-		object.put("data", getImg(array));
+		object.put("data", getImg(array2));
 		return resultMessage(object);
 	}
 
@@ -184,9 +214,10 @@ public class ReportModel {
 				bind().eq(obj.toString(),
 						object.get(obj.toString()).toString());
 			}
-
 		}
-		return resultMessage(getImg(bind().limit(no).select()));
+		JSONArray array = bind().limit(no).select();
+		JSONArray array2 = dencode(array);
+		return resultMessage(getImg(array2));
 	}
 
 	private DBHelper getCond(DBHelper rep, String key, String[] values) {
@@ -209,7 +240,8 @@ public class ReportModel {
 						object.get(obj.toString()).toString());
 			}
 		}
-		return resultMessage(getImg(bind().limit(50).select()));
+		JSONArray array = bind().limit(50).select();
+		return resultMessage(getImg(dencode(array)));
 	}
 
 	// 举报件处理完成
@@ -229,12 +261,20 @@ public class ReportModel {
 				.toString();
 		int code = bind().eq("_id", new ObjectId(id)).data(reasons)
 				.update() != null ? 0 : 99;
-		if (code == 0) {
-			// 发送短信只举报人
-			SendSMS(id);
-			// 发送微信至举报人
-
-		}
+		// if (code == 0) {
+		// 发送短信只举报人
+		// SendSMS(id);
+		// 发送微信至举报人
+		// }
+		// 添加操作日志
+		JSONObject object = new JSONObject();
+		object.put("OperateId", reasons.get("").toString());
+		object.put("ReportId", id);
+		object.put("time", TimeHelper.nowMillis());
+		object.put("ContentLog", reasons.get("reason").toString());
+		object.put("step", "该举报件已处理完结");
+		appsProxy.proxyCall(host,
+				appid + "/45/ReportLog/AddLog/" + object.toString(), null, "");
 		return code;
 	}
 
@@ -258,11 +298,20 @@ public class ReportModel {
 				.toString();
 		int code = bind().eq("_id", new ObjectId(id)).data(reasons)
 				.update() != null ? 0 : 99;
-		if (code == 0) {
-			// 发送短信只举报人
-			SendSMS(id);
-			// 发送微信至举报人
-		}
+//		if (code == 0) {
+//			// 发送短信只举报人
+//			SendSMS(id);
+//			// 发送微信至举报人
+//		}
+		// 添加操作日志
+		JSONObject object = new JSONObject();
+		object.put("OperateId", reasons.get("").toString());
+		object.put("ReportId", id);
+		object.put("time", TimeHelper.nowMillis());
+		object.put("ContentLog", reasons.get("reason").toString());
+		object.put("step", "该举报件已处理完结");
+		appsProxy.proxyCall(host,
+				appid + "/45/ReportLog/AddLog/" + object.toString(), null, "");
 		return code;
 	}
 
@@ -305,7 +354,6 @@ public class ReportModel {
 		int count = 0;
 		JSONObject object = new JSONObject();
 		if (session.get(phone) != null) {
-			System.out.println(session.get(phone).toString());
 			object = JSONHelper.string2json(session.get(phone).toString());
 			count = Integer.parseInt(object.get("count").toString()); // 次数
 			time = TimeHelper
@@ -327,12 +375,22 @@ public class ReportModel {
 	public String search(String userid, int no) {
 		JSONArray array = bind().and().eq("userid", userid).ne("state", 0)
 				.limit(no).select();
-		return resultMessage(getImg(array));
+		JSONArray array2 = getImg(array);
+		return resultMessage(array2);
 	}
 
 	public String counts(String userid) {
 		long count = bind().eq("userid", userid).count();
 		return resultMessage(0, String.valueOf(count));
+		// return null;
+	}
+
+	public String counts(JSONObject object) {
+		long count = bind()
+				.eq("state", Integer.parseInt(object.get("state").toString()))
+				.count();
+		return resultMessage(0, String.valueOf(count));
+		// return null;
 	}
 
 	public String feed(String userid) {
@@ -374,63 +432,73 @@ public class ReportModel {
 	}
 
 	// 实名举报
-	private String RealName(JSONObject object) {
-		if (count > 5) {
-			return resultMessage(0);
-		}
-		setCheck();
-		form.putRule("Informant", formdef.notNull);
-		form.putRule("InformantPhone", formdef.notNull);
-		if (!form.checkRuleEx(object)) {
-		}
-		if (!checkPhone(object.get("InformantPhone").toString())) {
-			return resultMessage(2);
-		}
-		// 发送短信验证码,中断当前操作
-		// 获取随机6位验证码
-		String ckcode = getValidateCode();
-		// 1.发送验证码
-		String text = "您的验证码为：" + ckcode;
-		String message = appsProxy
-				.proxyCall(
-						host, "/45/SMS/SendVerity/"
-								+ object.get("phone").toString() + "/" + text,
-						null, "")
+	public String RealName(JSONObject object) {
+		String openid = object.get("userid").toString();
+		// 判断是否实名认证
+		String message = appsProxy.proxyCall(host,
+				appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
 				.toString();
-		long errorcode = (long) JSONHelper.string2json(message)
-				.get("errorcode");
-		int code = Integer.parseInt(String.valueOf(errorcode));
-		// int code = SendVerity(object.get("phone").toString(),
-		// "您的验证码为：" + ckcode);
-		if (code == 0) {
-			String nextstep = object.toString().replace("\"", "\\\"");
-			boolean flag = interrupt._break(ckcode,
-					object.get("InformantPhone").toString(),
-					appid + "/45/Report/insert/s:" + nextstep, "13");
-			code = flag ? 0 : 99;
+		String tip = JSONHelper.string2json(message).get("message").toString();
+		if (!("").equals(tip)) {
+			String phone = JSONHelper.string2json(tip).get("phone").toString();
+			String ckcode = getValidateCode();
+			// 1.发送验证码
+			int code = SendVerity(phone, "您的验证码为：" + ckcode);
+			if (code == 0) {
+				String nextstep = appid + "/45/Report/insert/"
+						+ object.toString();
+				boolean flag = interrupt._break(ckcode, phone, nextstep,
+						appid + "");
+				code = flag ? 0 : 99;
+			}
+			return resultMessage(code, "验证码发送成功");
 		}
-
-		return resultMessage(code, "验证码发送成功");
+		return resultMessage(99);
 	}
 
 	// 恢复当前操作
-	public int resu(JSONObject object) {
-		if (object == null) {
-			return 10;
-		}
+	@SuppressWarnings("unchecked")
+	public String resu(JSONObject object) {
+		session session = new session();
+		String openid = object.get("openid").toString();
+		// 判断是否实名认证
+		String messages = appsProxy.proxyCall(host,
+				appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
+				.toString();
+		String tips = JSONHelper.string2json(messages).get("message")
+				.toString();
+		String phone = JSONHelper.string2json(tips).get("phone").toString();
+		object.put("phone", phone);
+		// if (object == null) {
+		// return resultMessage(10);
+		// }
 		if (object.containsKey("ckcode") && object.containsKey("phone")) {
 			int code = interrupt._resume(object.get("ckcode").toString(),
 					object.get("phone").toString(),
 					String.valueOf(appsProxy.appid()));
 			if (code == 0) {
-				return 4;
+				return resultMessage(4);
 			}
 			if (code == 1) {
-				return 5;
+				return resultMessage(5);
 			}
-			return 0;
+			if (("2").equals(object.get("type").toString())) {
+				// interrupt._resume(object.get("ckcode").toString(),
+				// object.get("phone").toString(),
+				// String.valueOf(appsProxy.appid()));
+				String url = appid + "/45/Report/insert/s:"
+						+ session.get(object.get("openid").toString());
+				String tip = appsProxy.proxyCall(host, url, null, "")
+						.toString();
+				System.out.println(tip);
+				String message = appsProxy.proxyCall(host,
+						"/15/wechatUser/FindById/"
+								+ object.get("openid").toString(),
+						null, "").toString();
+				return message;
+			}
 		}
-		return 99;
+		return resultMessage(0);
 	}
 
 	// 验证内容是否含有敏感字符串
@@ -443,11 +511,10 @@ public class ReportModel {
 
 	// 获取用户openid，实名认证
 	@SuppressWarnings("unchecked")
-	public String getId(String code,String url) {
+	public String getId(String code, String url) {
 		// 获取微信签名
-		String signMsg = appsProxy
-				.proxyCall(host, appid + "/30/Wechat/getSignature/"+url, null, "")
-				.toString();
+		String signMsg = appsProxy.proxyCall(host,
+				appid + "/30/Wechat/getSignature/" + url, null, "").toString();
 		String sign = JSONHelper.string2json(signMsg).get("message").toString();
 		JSONObject object = new JSONObject();
 		String openid = appsProxy.proxyCall(host,
@@ -464,6 +531,8 @@ public class ReportModel {
 		if (!("").equals(tip)) {
 			object.put("msg", "已实名认证");
 			object.put("openid", openid);
+			object.put("headimgurl",
+					JSONHelper.string2json(tip).get("headimgurl").toString());
 			object.put("sign", sign);
 			return jGrapeFW_Message.netMSG(0, object.toString());
 		}
@@ -487,6 +556,10 @@ public class ReportModel {
 		if (!checkPhone(phone)) {
 			return 5;
 		}
+		String IDCard = object.get("IDCard").toString();
+		if (!checkHelper.checkPersonCardID(IDCard)) {
+			return 13;
+		}
 		// 发送短信验证码,中断当前操作
 		// 获取随机6位验证码
 		String ckcode = getValidateCode();
@@ -501,6 +574,18 @@ public class ReportModel {
 			boolean flag = interrupt._break(ckcode, phone, nextstep,
 					appid + "");
 			code = flag ? 0 : 99;
+			// if (("2").equals(object.get("type").toString())) {
+			// if (code == 0) {
+			// info = session.get(object.get("openid").toString())
+			// .toString();
+			// System.out.println(info.getBytes().length);
+			// nlogger.logout(info);
+			//// String step = info.replace("\"", "\\\"");
+			// interrupt._break(ckcode, object.get("phone").toString(),
+			// appid + "/45/Report/insert/s:" + info, appid + "");
+			// code = flag ? 0 : 99;
+			// }
+			// }
 		}
 		return code;
 	}
@@ -566,29 +651,62 @@ public class ReportModel {
 
 	@SuppressWarnings("unchecked")
 	private JSONObject getImg(JSONObject object) {
-		List<String> list = new ArrayList<String>();
+		List<String> liStrings = new ArrayList<String>();
 		if (object.containsKey("attr1")) {
-			list = getImgUrl(list, object.get("attr1").toString());
+			object = getFile("attrFile1", object.get("attr1").toString(),
+					object);
 		}
 		if (object.containsKey("attr2")) {
-			list = getImgUrl(list, object.get("attr2").toString());
+			object = getFile("attrFile2", object.get("attr2").toString(),
+					object);
 		}
 		if (object.containsKey("attr3")) {
-			list = getImgUrl(list, object.get("attr3").toString());
+			object = getFile("attrFile3", object.get("attr3").toString(),
+					object);
 		}
 		if (object.containsKey("attr4")) {
-			list = getImgUrl(list, object.get("attr4").toString());
+			object = getFile("attrFile4", object.get("attr4").toString(),
+					object);
+		}
+		if (object.containsKey("mediaid")) {
+			liStrings = getMedia(liStrings, object.get("mediaid").toString());
 		}
 		// 获取举报类型
 		if (object.containsKey("type")) {
 			object = getType(object);
 		}
-		if (list.size() != 0) {
-			object.put("image", StringHelper.join(list));
+		if (imgList.size() != 0) {
+			object.put("image", StringHelper.join(imgList));
 		} else {
 			object.put("image", "");
 		}
+		if (videoList.size() != 0) {
+			object.put("video", StringHelper.join(videoList));
+		} else {
+			object.put("media", "");
+		}
+		if (liStrings.size() != 0) {
+			object.put("media", StringHelper.join(liStrings));
+		} else {
+			object.put("media", "");
+		}
 		return object;
+	}
+
+	private List<String> getMedia(List<String> list, String mediaid) {
+		if (("").equals(mediaid)) {
+			return list;
+		}
+		String message = appsProxy.proxyCall(host,
+				appid + "/30/Wechat/downloadMedia/" + mediaid, null, "")
+				.toString();
+		nlogger.logout(message);
+		String url = JSONHelper.string2json(message).get("message").toString();
+		url = "http://123.57.214.226:8080" + url;
+		if (!("").equals(url)) {
+			list.add(url);
+		}
+		return list;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -604,9 +722,13 @@ public class ReportModel {
 					.toString();
 			String msg = JSONHelper.string2json(message).get("message")
 					.toString();
-			msg = JSONHelper.string2json(msg).get("records").toString();
-			object.put("ReportType",
-					JSONHelper.string2json(msg).get("TypeName").toString());
+			if (("").equals(msg)) {
+				object.put("ReportType", "");
+			} else {
+				msg = JSONHelper.string2json(msg).get("records").toString();
+				object.put("ReportType",
+						JSONHelper.string2json(msg).get("TypeName").toString());
+			}
 		}
 		return object;
 	}
@@ -624,15 +746,55 @@ public class ReportModel {
 		return list;
 	}
 
+	// private List<String> getVideo(){
+	//
+	// }
+	@SuppressWarnings("unchecked")
+	private JSONObject getFile(String key, String imgid, JSONObject object) {
+		String fileInfo = "";
+		if (!("").equals(imgid)) {
+			// 获取文件对象
+			fileInfo = appsProxy.proxyCall(host,
+					appid + "/24/Files/getFile/" + imgid, null, "").toString();
+			fileInfo = JSONHelper.string2json(fileInfo).get("message")
+					.toString();
+			if (("").equals(fileInfo)) {
+				object.put(key, "");
+			} else {
+				object.put(key, JSONHelper.string2json(fileInfo));
+				if ("1".equals(JSONHelper.string2json(fileInfo).get("filetype")
+						.toString())) {
+					imgList.add("http://123.57.214.226:8080" + JSONHelper
+							.string2json(fileInfo).get("filepath").toString());
+				}
+				if ("2".equals(JSONHelper.string2json(fileInfo).get("filetype")
+						.toString())) {
+					videoList.add("http://123.57.214.226:8080" + JSONHelper
+							.string2json(fileInfo).get("filepath").toString());
+				}
+			}
+		}
+		return object;
+
+	}
+
 	private boolean checkPhone(String mob) {
 		return checkHelper.checkMobileNumber(mob);
 	}
 
+	// private String getRecord(JSONArray array){
+	//
+	// }
 	// 设置验证项
 	private formHelper setCheck() {
-		form.putRule("Wrongdoer", formdef.notNull);
-		// form.putRule("WrongdoerSex", formdef.notNull);
+		// form.putRule("Wrongdoer", formdef.notNull);
+		form.putRule("WrongdoerSex", formdef.notNull);
+		form.putRule("mode", formdef.notNull);
+		form.putRule("type", formdef.notNull);
 		form.putRule("content", formdef.notNull);
+		form.putRule("region", formdef.notNull); // 地区
+		// form.putRule("workplace", formdef.notNull);
+		// form.putRule("post", formdef.notNull);
 		return form;
 	}
 
@@ -718,6 +880,12 @@ public class ReportModel {
 			break;
 		case 11:
 			msg = "您今日短信发送次数已达上线";
+			break;
+		case 12:
+			msg = "您还未进行实名绑定";
+			break;
+		case 13:
+			msg = "身份证号格式错误";
 			break;
 		default:
 			msg = "其他操作异常";

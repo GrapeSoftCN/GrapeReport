@@ -13,6 +13,7 @@ import apps.appsProxy;
 import esayhelper.JSONHelper;
 import esayhelper.TimeHelper;
 import model.ReportModel;
+import security.codec;
 
 public class Report {
 	private ReportModel model = new ReportModel();
@@ -33,10 +34,13 @@ public class Report {
 	}
 
 	// 新增
+	@SuppressWarnings("unchecked")
 	public String AddReport(String ReportInfo) {
 		JSONObject object = model.AddMap(map,
 				JSONHelper.string2json(ReportInfo));
-		return model.Add(object);
+		object.put("content",
+				codec.encodebase64(object.get("content").toString()));
+		return model.Add(object.toString());
 	}
 
 	public String insert(String info) {
@@ -102,9 +106,24 @@ public class Report {
 		if (!object.containsKey("state")) {
 			object.put("state", 2);
 		}
+		// 添加操作日志
+		JSONObject objects = new JSONObject();
+		object.put("OperateId", object.get("").toString());
+		object.put("ReportId", id);
+		object.put("time", TimeHelper.nowMillis());
+		object.put("ContentLog", "");
+		object.put("step", "该举报件已处理完结");
+		appsProxy.proxyCall(
+				"123.57.214.226:801", appsProxy.appid()
+						+ "/45/ReportLog/AddLog/" + objects.toString(),
+				null, "");
 		return model.resultMessage(model.Update(id, object), "举报件正在处理");
 	}
 
+	//合并举报件
+	public void JoinReport(){
+		
+	}
 	// 查询个人相关的举报件
 	public String searchById(String userid, int no) {
 		return model.search(userid, no);
@@ -135,8 +154,7 @@ public class Report {
 
 	// 恢复当前操作
 	public String resume(String info) {
-		return model.resultMessage(model.resu(JSONHelper.string2json(info)),
-				"操作成功");
+		return model.resu(JSONHelper.string2json(info));
 	}
 
 	// 验证内容是否含有敏感字符串
@@ -145,8 +163,8 @@ public class Report {
 	}
 
 	// 获取用户openid，实名认证
-	public String getUserId(String code,String url) {
-		return model.getId(code,url);
+	public String getUserId(String code, String url) {
+		return model.getId(code, url);
 	}
 
 	// 实名认证
@@ -183,5 +201,10 @@ public class Report {
 			}
 		}, delay, period, TimeUnit.DAYS);
 		return "currentTime:" + new Date();
+	}
+
+	// 尚未被处理的事件总数
+	public String Count(String info) {
+		return model.counts(JSONHelper.string2json(info));
 	}
 }

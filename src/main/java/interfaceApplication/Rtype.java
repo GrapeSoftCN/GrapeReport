@@ -106,7 +106,8 @@ public class Rtype {
 	}
 
 	public String findById(String id) {
-		return resultMessage(bind().eq("_id", new ObjectId(id)).find());
+		JSONObject object = bind().eq("_id", new ObjectId(id)).find();
+		return object != null ? resultMessage(object) : resultMessage(0,"");
 	}
 
 	@SuppressWarnings("unchecked")
