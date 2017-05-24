@@ -1,5 +1,6 @@
 package interfaceApplication;
 
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.TimerTask;
@@ -13,14 +14,19 @@ import apps.appsProxy;
 import esayhelper.JSONHelper;
 import esayhelper.TimeHelper;
 import model.ReportModel;
+import nlogger.nlogger;
 import security.codec;
+import sms.ruoyaMASDB;
 
 public class Report {
+	private static boolean initThread;
 	private ReportModel model = new ReportModel();
 	private HashMap<String, Object> map = new HashMap<>();
 	private ScheduledExecutorService service = Executors
 			.newSingleThreadScheduledExecutor();
-
+	static{
+		initThread = false;
+	}
 	public Report() {
 		map.put("time", String.valueOf(TimeHelper.nowMillis()));
 		map.put("state", 0); // 0：已受理；1：处理中；2：已处理；3：被拒绝
@@ -31,6 +37,7 @@ public class Report {
 		map.put("handletime", "");
 		map.put("completetime", "");
 		map.put("refusetime", "");
+		map.put("Rgroup", "");
 	}
 
 	// 新增
@@ -108,22 +115,23 @@ public class Report {
 		}
 		// 添加操作日志
 		JSONObject objects = new JSONObject();
-		object.put("OperateId", object.get("").toString());
+		// object.put("OperateId", object.get("").toString());
 		object.put("ReportId", id);
 		object.put("time", TimeHelper.nowMillis());
 		object.put("ContentLog", "");
 		object.put("step", "该举报件已处理完结");
 		appsProxy.proxyCall(
 				"123.57.214.226:801", appsProxy.appid()
-						+ "/45/ReportLog/AddLog/" + objects.toString(),
+						+ "/45/ReportLog/Addlog/" + objects.toString(),
 				null, "");
 		return model.resultMessage(model.Update(id, object), "举报件正在处理");
 	}
 
-	//合并举报件
-	public void JoinReport(){
-		
+	// 合并举报件【ids之间使用","隔开】
+	public String JoinReport(String ids) {
+		return model.resultMessage(model.ReportJoin(ids.split(",")), "合并举报件成功");
 	}
+
 	// 查询个人相关的举报件
 	public String searchById(String userid, int no) {
 		return model.search(userid, no);
@@ -144,7 +152,7 @@ public class Report {
 	}
 
 	// 导出举报件
-	public String printWord(String info) {
+	public String Export(String info) {
 		return model.print(info);
 	}
 
@@ -186,8 +194,24 @@ public class Report {
 	}
 
 	// 对用户进行封号
-	public String kick(String openid, String info) {
-		return model.UserKick(openid, JSONHelper.string2json(info));
+	@SuppressWarnings("unchecked")
+	public String kick(String openid,String info) {
+		String code = "0";
+		JSONObject object = JSONHelper.string2json(info);
+		String message = model.UserKick(openid, object);
+		if (("0").equals(
+				JSONHelper.string2json(message).get("errorcode").toString())) {
+			if (object.containsKey("reason")) {
+				JSONObject obj = new JSONObject();
+				obj.put("reason", object.get("reason").toString());
+				String messages = RefuseReport(object.get("_id").toString(),
+						obj.toString());
+				code = String.valueOf(
+						JSONHelper.string2json(messages).get("errorcode"));
+			}
+			return model.resultMessage(Integer.parseInt(code), "操作成功");
+		}
+		return model.resultMessage(18,"");
 	}
 
 	// 定时解封
@@ -206,5 +230,53 @@ public class Report {
 	// 尚未被处理的事件总数
 	public String Count(String info) {
 		return model.counts(JSONHelper.string2json(info));
+	}
+
+	// 统计量
+	public String ReportCount(String param) {
+		return model.EventCounts(JSONHelper.string2json(param));
+	}
+
+	// 统计量与全量比例
+	public String ReportPercent(String param) {
+		return model.PercentCounts(JSONHelper.string2json(param));
+	}
+
+	// 定时发送增加量到管理员手机号
+	public String TimerSendCount(String param) {
+		JSONObject object = JSONHelper.string2json(param);
+		Calendar date = Calendar.getInstance();
+		int hour = 8, day = 1;
+		if (object.containsKey("hour")) {
+			if (!("").equals(object.get("hour").toString())) {
+				hour = Integer.parseInt(object.get("hour").toString());
+			}
+		}
+		if (object.containsKey("day")) {
+			if (!("").equals(object.get("day").toString())) {
+				day = Integer.parseInt(object.get("day").toString());
+			}
+		}
+		date.set(date.get(Calendar.YEAR), date.get(Calendar.MONTH),
+				date.get(Calendar.DATE), hour, 0, 0);
+		if( initThread == false ){
+			initThread = true;
+			JSONObject jObject = appsProxy.configValue();
+			service.scheduleAtFixedRate( ()->{
+				if (object.containsKey("phone")) {
+					int count = Integer.parseInt(model.TimerInsertCount(jObject));
+					if (count>0) {
+						ruoyaMASDB.sendSMS(
+								object.get("phone").toString(),
+								"24小时内，新增举报量为："+String.valueOf(count));
+					}else{
+						nlogger.logout(".....");
+					}
+				} else {
+					nlogger.logout("没有手机号，无法发送短信至管理员");
+				}
+			}, 2, day, TimeUnit.SECONDS);
+		}
+		return model.resultMessage(0, "任务执行成功");
 	}
 }

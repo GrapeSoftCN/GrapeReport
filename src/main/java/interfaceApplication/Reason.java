@@ -110,10 +110,13 @@ public class Reason {
 	public String addTime(String name) {
 		bind().eq("Rcontent", name);
 		JSONObject object = bind().dirty().find();
-		object.put("count",
-				Integer.parseInt(object.get("count").toString()) + 1);
-		return bind().data(object).update() != null ? resultMessage(0)
-				: resultMessage(99);
+		if (object!=null) {
+			object.put("count",
+					Integer.parseInt(object.get("count").toString()) + 1);
+			return bind().data(object).update() != null ? resultMessage(0)
+					: resultMessage(99);
+		}
+		return resultMessage(99);
 	}
 
 	public JSONObject findByName(String name) {
