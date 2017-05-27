@@ -11,6 +11,7 @@ import esayhelper.JSONHelper;
 import esayhelper.formHelper;
 import esayhelper.jGrapeFW_Message;
 import esayhelper.formHelper.formdef;
+import session.session;
 
 public class Rtype {
 	private static DBHelper type;
@@ -106,7 +107,19 @@ public class Rtype {
 	}
 
 	public String findById(String id) {
-		JSONObject object = bind().eq("_id", new ObjectId(id)).find();
+		JSONObject object = new JSONObject();
+		session session = new session();
+		if (session.get(id)!=null) {
+			String info = session.get(id).toString();
+			object = JSONHelper.string2json(info);
+		}else{
+			object = bind().eq("_id", new ObjectId(id)).find();
+			if (object==null) {
+				session.setget(id, "");
+			}else{
+				session.setget(id, object.toString());
+			}
+		}
 		return object != null ? resultMessage(object) : resultMessage(0,"");
 	}
 

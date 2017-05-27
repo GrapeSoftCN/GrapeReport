@@ -8,6 +8,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 import apps.appsProxy;
@@ -90,6 +91,22 @@ public class Report {
 		return model.finds(JSONHelper.string2json(info));
 	}
 
+	@SuppressWarnings("unchecked")
+	public String excel(String info) {
+		JSONObject object = new JSONObject();
+		JSONArray array = model.findexcel(JSONHelper.string2json(info));
+		for (int i = 0; i < array.size(); i++) {
+			object = (JSONObject) array.get(i);
+			for (Object obj : object.keySet()) {
+				String value = object.get(obj.toString()).toString();
+				if (value.contains("$numberLong")) {
+					JSONObject object2 = JSONHelper.string2json(value);
+					object.put(obj.toString(), Long.parseLong(object2.get("$numberLong").toString()));
+				}
+			}
+		}
+		return object.toString();
+	}
 	// 举报件处理完成
 	public String CompleteReport(String id, String reson) {
 		return model.resultMessage(
@@ -114,16 +131,16 @@ public class Report {
 			object.put("state", 2);
 		}
 		// 添加操作日志
-		JSONObject objects = new JSONObject();
+//		JSONObject objects = new JSONObject();
 		// object.put("OperateId", object.get("").toString());
-		object.put("ReportId", id);
-		object.put("time", TimeHelper.nowMillis());
-		object.put("ContentLog", "");
-		object.put("step", "该举报件已处理完结");
-		appsProxy.proxyCall(
-				"123.57.214.226:801", appsProxy.appid()
-						+ "/45/ReportLog/Addlog/" + objects.toString(),
-				null, "");
+//		object.put("ReportId", id);
+//		object.put("time", TimeHelper.nowMillis());
+//		object.put("ContentLog", "");
+//		object.put("step", "该举报件已处理完结");
+//		appsProxy.proxyCall(
+//				"123.57.214.226:801", appsProxy.appid()
+//						+ "/45/ReportLog/Addlog/" + objects.toString(),
+//				null, "");
 		return model.resultMessage(model.Update(id, object), "举报件正在处理");
 	}
 
@@ -228,8 +245,8 @@ public class Report {
 	}
 
 	// 尚未被处理的事件总数
-	public String Count(String info) {
-		return model.counts(JSONHelper.string2json(info));
+	public String Count() {
+		return model.counts();
 	}
 
 	// 统计量
