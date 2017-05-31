@@ -162,15 +162,13 @@ public class ReportModel {
 	@SuppressWarnings("unchecked")
 	public String page(int ids, int pageSize) {
 		JSONArray array = getdb().desc("time").page(ids, pageSize);
-		if (array.size() == 0) {
-			return resultMessage(0, "");
-		}
 		JSONObject object = new JSONObject();
 		JSONArray array2 = dencode(array); // 获取举报信息图片或者视频等
 		object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", getImg(array2));
+		
 		return resultMessage(object);
 	}
 
@@ -450,7 +448,7 @@ public class ReportModel {
 	@SuppressWarnings("unchecked")
 	public String counts() {
 		// long count = getdb().eq("state", 0).count();
-		String count = "";
+		int count = 0;
 		JSONArray array = getdb().count("state").group("state");
 		JSONObject obj = new JSONObject();
 		JSONObject objs = new JSONObject();
@@ -460,10 +458,10 @@ public class ReportModel {
 			if (!obj.get("_id").toString().equals(objs.toString())) {
 				continue;
 			}
-			count = String.valueOf(obj.get("count").toString());
+			count = Integer.parseInt(obj.get("count").toString());
 		}
 		// return resultMessage(0, String.valueOf(count));
-		return resultMessage(0, count);
+		return resultMessage(0, String.valueOf(count));
 	}
 
 	public String feed(String userid) {
@@ -520,6 +518,10 @@ public class ReportModel {
 			int code = SendVerity(phone, "验证码:" + ckcode);
 			if (code == 0) {
 				String nextstep = appid + "/45/Report/insert/" + object.toString();
+				JSONObject object2 = interrupt._exist(phone, String.valueOf(appid));
+				if (object2!=null) {
+					interrupt._clear(phone, String.valueOf(appid));
+				}
 				boolean flag = interrupt._break(ckcode, phone, nextstep, appid + "");
 				code = flag ? 0 : 99;
 			}
@@ -642,6 +644,10 @@ public class ReportModel {
 		if (code == 0) {
 			String nextstep = appid + "/16/wechatUser/insertOpenId/" + info;
 			// 2.中断[参数：随机验证码，手机号，下一步操作，appid]
+			JSONObject object2 = interrupt._exist(phone, String.valueOf(appid));
+			if (object2!=null) {
+				interrupt._clear(phone, String.valueOf(appid));
+			}
 			boolean flag = interrupt._break(ckcode, phone, nextstep, appid + "");
 			code = flag ? 0 : 99;
 			// if (("2").equals(object.get("type").toString())) {
@@ -850,7 +856,7 @@ public class ReportModel {
 	@SuppressWarnings("unchecked")
 	private JSONArray getImg(JSONArray array) {
 		JSONArray array2 = new JSONArray();
-		if (array != null && !("").equals(array)) {
+		if (array != null && !(" ").equals(array)) {
 			if (array.size() == 0) {
 				return array;
 			}
@@ -926,7 +932,9 @@ public class ReportModel {
 		String msg = "";
 		session session = new session();
 		if (object != null && !("").equals(object)) {
-			if ("0".equals(object.get("type").toString())) {
+			if (object.get("type")==null) {
+				object.put("ReportType", "测试数据");
+			}else if (("0").equals(object.get("type").toString())) {
 				object.put("ReportType", "");
 			} else {
 				if (session.get(object.get("type").toString()) != null) {
