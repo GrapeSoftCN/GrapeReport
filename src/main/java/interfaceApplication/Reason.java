@@ -11,6 +11,7 @@ import esayhelper.JSONHelper;
 import esayhelper.formHelper;
 import esayhelper.jGrapeFW_Message;
 import esayhelper.formHelper.formdef;
+import nlogger.nlogger;
 
 /**
  * 举报拒绝/完结事由管理
@@ -23,85 +24,133 @@ public class Reason {
 	private JSONObject _obj = new JSONObject();
 
 	static {
-		Reason = new DBHelper(appsProxy.configValue().get("db").toString(),
-				"reportReson");
+		Reason = new DBHelper(appsProxy.configValue().get("db").toString(), "reportReson");
 		form = Reason.getChecker();
 	}
-	private db bind(){
+
+	private db bind() {
 		return Reason.bind(String.valueOf(appsProxy.appid()));
 	}
+
 	// 新增
 	@SuppressWarnings("unchecked")
 	public String AddReson(String info) {
+		String code = "";
 		form.putRule("Rcontent", formdef.notNull);
 		JSONObject object = JSONHelper.string2json(info);
-		object.put("count", 0);
-		if (!form.checkRuleEx(object)) {
-			return resultMessage(1);
+		if (object != null) {
+			try {
+				object.put("count", 0);
+				if (!form.checkRuleEx(object)) {
+					return resultMessage(1);
+				}
+				if (findByName(object.get("Rcontent").toString()) != null) {
+					return resultMessage(2);
+				}
+				code = bind().data(object).insertOnce().toString();
+			} catch (Exception e) {
+				code = "";
+			}
 		}
-		if (findByName(object.get("Rcontent").toString()) != null) {
-			return resultMessage(2);
+		if (("").equals(code)) {
+			resultMessage(99);
 		}
-		String code = bind().data(object).insertOnce().toString();
 		return resultMessage(findById(code));
 	}
 
 	// 修改
 	public String UpdateReson(String id, String Info) {
+		int code = 99;
 		JSONObject object = JSONHelper.string2json(Info);
-		if (object.containsKey("Rcontent")) {
-			if (findByName(object.get("Rcontent").toString()) != null) {
-				return resultMessage(2);
+		if (object != null) {
+			try {
+				if (object.containsKey("Rcontent")) {
+					if (findByName(object.get("Rcontent").toString()) != null) {
+						return resultMessage(2);
+					}
+				}
+				code = bind().eq("_id", new ObjectId(id)).data(object).update() != null ? 0 : 99;
+			} catch (Exception e) {
+				code = 99;
 			}
 		}
-		int code = bind().eq("_id", new ObjectId(id)).data(object)
-				.update() != null ? 0 : 99;
 		return resultMessage(code, "修改成功");
 	}
 
 	// 删除
 	public String DeleteReson(String id) {
-		int code = bind().eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
+		int code = 99;
+		try {
+			JSONObject object = bind().eq("_id", new ObjectId(id)).delete();
+			code = (object != null ? 0 : 99);
+		} catch (Exception e) {
+			nlogger.logout(e);
+			code = 99;
+		}
 		return resultMessage(code, "删除成功");
 	}
 
 	// 批量删除
 	public String DeleteBatchReson(String ids) {
-		String[] value = ids.split(",");
-		int len = value.length;
-		bind().or();
-		for (int i = 0; i < len; i++) {
-			bind().eq("_id", new ObjectId(value[i]));
+		int code = 99;
+		try {
+			String[] value = ids.split(",");
+			int len = value.length;
+			bind().or();
+			for (int i = 0; i < len; i++) {
+				bind().eq("_id", new ObjectId(value[i]));
+			}
+			long codes = bind().deleteAll();
+			code = (Integer.parseInt(String.valueOf(codes)) == len ? 0 : 99);
+		} catch (Exception e) {
+			nlogger.logout(e);
+			code = 99;
 		}
-		int code = bind().deleteAll() == len ? 0 : 99;
 		return resultMessage(code, "删除成功");
 	}
 
 	// 分页
 	@SuppressWarnings("unchecked")
 	public String PageReson(int ids, int pageSize) {
-		JSONArray array = bind().desc("count").page(ids, pageSize);
-		JSONObject object = new JSONObject();
-		object.put("totalSize",
-				(int) Math.ceil((double) bind().count() / pageSize));
-		object.put("pageSize", pageSize);
-		object.put("currentPage", ids);
-		object.put("data", array);
+		JSONObject object = null;
+		try {
+			JSONArray array = bind().desc("count").page(ids, pageSize);
+			object = new JSONObject();
+			object.put("totalSize", (int) Math.ceil((double) bind().count() / pageSize));
+			object.put("currentPage", ids);
+			object.put("pageSize", pageSize);
+			object.put("data", array);
+		} catch (Exception e) {
+			nlogger.logout(e);
+			object = null;
+		}
 		return resultMessage(object);
 	}
 
 	// 搜索
 	@SuppressWarnings("unchecked")
 	public String search(int ids, int pageSize, String info) {
-		bind().like("Rcontent",
-				JSONHelper.string2json(info).get("Rcontent").toString());
-		JSONArray array = bind().dirty().desc("count").page(ids, pageSize);
-		JSONObject object = new JSONObject();
-		object.put("totalSize",
-				(int) Math.ceil((double) bind().count() / pageSize));
-		object.put("pageSize", pageSize);
-		object.put("currentPage", ids);
-		object.put("data", array);
+		JSONObject object = null;
+		JSONObject obj = JSONHelper.string2json(info);
+		if (info != null) {
+			try {
+				bind().and();
+				for (Object object2 : obj.keySet()) {
+					if ("_id".equals(object2.toString())) {
+						bind().eq("_id", new ObjectId(obj.get("_id").toString()));
+					}
+					bind().like(object2.toString(), obj.get(object2.toString()));
+				}
+				JSONArray array = bind().dirty().desc("count").page(ids, pageSize);
+				object = new JSONObject();
+				object.put("totalSize", (int) Math.ceil((double) bind().count() / pageSize));
+				object.put("currentPage", ids);
+				object.put("pageSize", pageSize);
+				object.put("data", array);
+			} catch (Exception e) {
+				object = null;
+			}
+		}
 		return resultMessage(object);
 	}
 
@@ -110,25 +159,28 @@ public class Reason {
 	public String addTime(String name) {
 		bind().eq("Rcontent", name);
 		JSONObject object = bind().dirty().find();
-		if (object!=null) {
-			object.put("count",
-					Integer.parseInt(object.get("count").toString()) + 1);
-			return bind().data(object).update() != null ? resultMessage(0)
-					: resultMessage(99);
+		if (object != null) {
+			object.put("count", Integer.parseInt(object.get("count").toString()) + 1);
+			return bind().data(object).update() != null ? resultMessage(0) : resultMessage(99);
 		}
 		return resultMessage(99);
 	}
 
-	public JSONObject findByName(String name) {
-		return bind().eq("Rcontent", name).find();
+	private JSONObject findByName(String name) {
+		JSONObject object = bind().eq("Rcontent", name).find();
+		return object != null ? object : null;
 	}
 
-	public JSONObject findById(String id) {
-		return bind().eq("_id", new ObjectId(id)).find();
+	private JSONObject findById(String id) {
+		JSONObject object = bind().eq("_id", new ObjectId(id)).find();
+		return object != null ? object : null;
 	}
 
 	@SuppressWarnings("unchecked")
 	private String resultMessage(JSONObject object) {
+		if (object == null) {
+			object = new JSONObject();
+		}
 		_obj.put("records", object);
 		return resultMessage(0, _obj.toString());
 	}

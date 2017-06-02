@@ -16,6 +16,8 @@ import java.util.Base64.Decoder;
 import java.util.Map.Entry;
 
 import org.apache.commons.collections4.Get;
+import org.apache.commons.lang3.ObjectUtils.Null;
+import org.asynchttpclient.netty.ws.NettyWebSocket;
 import org.bson.types.ObjectId;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -26,6 +28,7 @@ import com.mysql.fabric.xmlrpc.base.Array;
 
 import apps.appsProxy;
 import database.db;
+import esayhelper.CacheHelper;
 import esayhelper.DBHelper;
 import esayhelper.JSONHelper;
 import esayhelper.StringHelper;
@@ -52,6 +55,7 @@ public class ReportModel {
 	private static int appid = appsProxy.appid();
 	private List<String> imgList = new ArrayList<>();
 	private List<String> videoList = new ArrayList<>();
+
 	static {
 		report = ReportModel.getdb();
 		form = report.getChecker();
@@ -72,45 +76,37 @@ public class ReportModel {
 	}
 
 	// 新增
-	public String Add(String infos) {
-		JSONObject object = JSONHelper.string2json(infos);
-		if ((object.get("content").toString().length() > 500)) {
-			return resultMessage(6);
-		}
-		if (("").equals(object.get("userid").toString())) {
-			return resultMessage(15);
-		}
-		int mode = Integer.parseInt(object.get("mode").toString());
-		String info = "";
-		if (mode == 0) {
-			// 判断用户是否被封号
-			String message = appsProxy.proxyCall(getAppIp("host").split("/")[0],
-					appid + "/16/wechatUser/FindOpenId/"+object.get("userid").toString(), null, "").toString();
-			String msg = JSONHelper.string2json(message).get("message").toString();
-			if (("").equals(msg)) {
-				session session = new session();
-				session.setget(object.get("userid").toString(), object.toString());
-				return resultMessage(12);
-			}
-			if (("1").equals(JSONHelper.string2json(msg).get("isdelete").toString())) {
-				return resultMessage(9);
-			}
-
-			info = RealName(object);
-			if (info == null) {
-				System.out.println("www");
-			}
-		}
-		if (mode == 1) {
-			setCheck();
-			if (!form.checkRuleEx(object)) {
-				return resultMessage(1);
-			}
-			info = insert(object);
-			if (info == null) {
+	@SuppressWarnings("unchecked")
+	public String Add(JSONObject object) {
+		String info = resultMessage(99);
+		// JSONObject object = JSONHelper.string2json(infos);
+		// 多个字段表示的图片视频，合并成使用一个字段表示
+		object = join(object);
+		if (object != null) {
+			try {
+				String userid = "";
+				if (object.containsKey("content")) {
+					String content = object.get("content").toString();
+					if (content.length() > 500) {
+						return resultMessage(6);
+					}
+					object.put("content", codec.encodebase64(content));
+				}
+				userid = object.get("userid").toString();
+				if (("").equals(userid)) {
+					return resultMessage(15);
+				}
+				int mode = Integer.parseInt(object.get("mode").toString());
+				switch (mode) {
+				case 0:
+					NonAnonymous(userid, object);
+					break;
+				case 1:
+					Anonymous(object);
+					break;
+				}
+			} catch (Exception e) {
 				info = resultMessage(99);
-			} else {
-				info = SearchById(info);
 			}
 		}
 		return info;
@@ -119,25 +115,41 @@ public class ReportModel {
 	// 修改
 	@SuppressWarnings("unchecked")
 	public int Update(String id, JSONObject object) {
-		String message = SearchById(id);
-		String tip = JSONHelper.string2json(message).get("message").toString();
-		JSONObject records = (JSONObject) JSONHelper.string2json(tip).get("records");
-		if (records.containsKey("Rgroup")) {
-			if ((" ").equals(records.get("Rgroup").toString())) {
-				getdb().eq("Rgroup", records.get("Rgroup").toString()).data(object).updateAll();
+		int code = 99;
+		if (object != null) {
+			try {
+				String message = SearchById(id);
+				if (JSONHelper.string2json(message) != null) {
+					String tip = JSONHelper.string2json(message).get("message").toString();
+					JSONObject records = (JSONObject) JSONHelper.string2json(tip).get("records");
+					if (records.containsKey("Rgroup")) {
+						if (!("").equals(records.get("Rgroup").toString())) {
+							getdb().eq("Rgroup", records.get("Rgroup").toString()).data(object).updateAll();
+						}
+					}
+					if (object.containsKey("reason")) {
+						String content = codec.encodebase64(object.get("reason").toString());
+						object.put("reason", codec.DecodeHtmlTag(content));
+					}
+					code = getdb().eq("_id", new ObjectId(id)).data(object).update() != null ? 0 : 99;
+				}
+			} catch (Exception e) {
+				code = 99;
 			}
 		}
-		if (object.containsKey("reason")) {
-			String content = codec.decodebase64(object.get("reason").toString());
-			object.put("reason", codec.DecodeHtmlTag(content));
-		}
-		int code = getdb().eq("_id", new ObjectId(id)).data(object).update() != null ? 0 : 99;
 		return code;
 	}
 
 	// 删除
 	public int Delete(String id) {
-		int code = getdb().eq("_id", new ObjectId(id)).delete() != null ? 0 : 99;
+		int code = 99;
+		try {
+			JSONObject object = getdb().eq("_id", new ObjectId(id)).delete();
+			code = (object != null ? 0 : 99);
+		} catch (Exception e) {
+			nlogger.logout(e);
+			code = 99;
+		}
 		return code;
 	}
 
@@ -149,44 +161,80 @@ public class ReportModel {
 
 	// 批量删除
 	public int Delete(String[] ids) {
-		int len = ids.length;
-		getdb().or();
-		for (int i = 0; i < len; i++) {
-			getdb().eq("_id", new ObjectId(ids[i]));
+		int code = 99;
+		try {
+			int len = ids.length;
+			getdb().or();
+			for (int i = 0; i < len; i++) {
+				getdb().eq("_id", new ObjectId(ids[i]));
+			}
+			long codes = bind().deleteAll();
+			code = (Integer.parseInt(String.valueOf(codes)) == len ? 0 : 99);
+		} catch (Exception e) {
+			nlogger.logout(e);
+			code = 99;
 		}
-		int code = getdb().deleteAll() == len ? 0 : 99;
 		return code;
 	}
 
 	// 分页
 	@SuppressWarnings("unchecked")
 	public String page(int ids, int pageSize) {
-		JSONArray array = getdb().desc("time").page(ids, pageSize);
-		JSONObject object = new JSONObject();
-		JSONArray array2 = dencode(array); // 获取举报信息图片或者视频等
-		object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
-		object.put("pageSize", pageSize);
-		object.put("currentPage", ids);
-		object.put("data", getImg(array2));
-		
+		Object objects = execRequest.getChannelValue("sid");
+		JSONObject obj = getSessPlv(objects);
+		JSONObject object = null;
+		if (obj != null) {
+			try {
+				object = new JSONObject();
+				JSONArray array = new JSONArray();
+				// 获取角色权限
+				int roleplv = Integer.parseInt(obj.get("rolePlv").toString());
+				if (roleplv > 10000) {
+					array = bind().desc("time").page(ids, pageSize);
+				}
+				if (roleplv > 5000 && roleplv <= 10000) {
+					array = bind().desc("time").eq("wbid", (String) obj.get("currentWeb")).page(ids, pageSize);
+				}
+				if (roleplv > 3000 && roleplv <= 5000) {
+					JSONObject oid = (JSONObject) obj.get("_id");
+					array = bind().like("ownid", oid.get("$oid").toString()).desc("time")
+							.eq("wbid", (String) obj.get("currentWeb")).page(ids, pageSize);
+				}
+				// JSONArray array = getdb().desc("time").page(ids, pageSize);
+				JSONArray array2 = dencode(array); // 获取举报信息图片或者视频等
+				object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
+				object.put("pageSize", pageSize);
+				object.put("currentPage", ids);
+				object.put("data", getImg(array2));
+			} catch (Exception e) {
+				nlogger.logout(e);
+				object = null;
+			}
+		}
 		return resultMessage(object);
 	}
 
 	@SuppressWarnings("unchecked")
 	private JSONArray dencode(JSONArray array) {
-		if (array.size() == 0) {
-			return array;
-		}
-		JSONArray arry = new JSONArray();
-		for (int i = 0; i < array.size(); i++) {
-			JSONObject object = (JSONObject) array.get(i);
-			if (object.containsKey("content") && object.get("content") != "") {
-				object.put("content", codec.decodebase64(object.get("content").toString()));
+		JSONArray arry = null;
+		try {
+			if (array.size() == 0) {
+				return array;
 			}
-			if (object.containsKey("reason") && object.get("reason") != "") {
-				object.put("reason", codec.decodebase64(object.get("reason").toString()));
+			arry = new JSONArray();
+			for (int i = 0; i < array.size(); i++) {
+				JSONObject object = (JSONObject) array.get(i);
+				if (object.containsKey("content") && !("").equals(object.get("content").toString())) {
+					object.put("content", codec.decodebase64(object.get("content").toString()));
+				}
+				if (object.containsKey("reason") && !("").equals(object.get("reason").toString())) {
+					object.put("reason", codec.decodebase64(object.get("reason").toString()));
+				}
+				arry.add(object);
 			}
-			arry.add(object);
+		} catch (Exception e) {
+			nlogger.logout(e);
+			array = null;
 		}
 		return arry;
 	}
@@ -199,30 +247,37 @@ public class ReportModel {
 		if (obj.containsKey("reason") && obj.get("reason") != "") {
 			obj.put("reason", codec.decodebase64(obj.get("reason").toString()));
 		}
-		// obj.put("content",
-		// codec.decodebase64(obj.get("content").toString()));
 		return obj;
 	}
 
 	// 条件分页
 	@SuppressWarnings("unchecked")
 	public String page(int ids, int pageSize, JSONObject objects) {
-		System.out.println("idx:" + ids + ",pageSize:" + pageSize + ",content:" + objects);
-		JSONObject object = new JSONObject();
-		if (objects != null && !("").equals(objects)) {
-			getdb().and();
-			for (Object obj : objects.keySet()) {
-				if (obj.equals("_id")) {
-					getdb().eq("_id", new ObjectId(objects.get("_id").toString()));
+		JSONObject object = null;
+		if (objects != null) {
+			try {
+				getdb().and();
+				for (Object obj : objects.keySet()) {
+					if (obj.equals("_id")) {
+						getdb().eq("_id", new ObjectId(objects.get("_id").toString()));
+					}
+					getdb().eq(obj.toString(), objects.get(obj.toString()));
 				}
-				getdb().eq(obj.toString(), objects.get(obj.toString()));
+				object = new JSONObject();
+				JSONArray array = getdb().dirty().desc("time").page(ids, pageSize);
+				if (array.size() == 0) {
+					object.put("data", array);
+				} else {
+					JSONArray array2 = dencode(array);
+					object.put("data", getImg(array2));
+				}
+				object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
+				object.put("pageSize", pageSize);
+				object.put("currentPage", ids);
+			} catch (Exception e) {
+				nlogger.logout(e);
+				object = null;
 			}
-			JSONArray array = getdb().dirty().desc("time").page(ids, pageSize);
-			JSONArray array2 = dencode(array);
-			object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
-			object.put("pageSize", pageSize);
-			object.put("currentPage", ids);
-			object.put("data", getImg(array2));
 		}
 		return resultMessage(object);
 	}
@@ -230,40 +285,51 @@ public class ReportModel {
 	// 模糊查询
 	@SuppressWarnings("unchecked")
 	public String find(int ids, int pageSize, JSONObject objects) {
-		getdb().or();
-		for (Object obj : objects.keySet()) {
-			getdb().like(obj.toString(), objects.get(obj.toString()));
+		JSONObject object = null;
+		if (objects != null) {
+			try {
+				getdb().or();
+				for (Object obj : objects.keySet()) {
+					getdb().like(obj.toString(), objects.get(obj.toString()));
+				}
+				JSONArray array = getdb().dirty().page(ids, pageSize);
+				JSONArray array2 = dencode(array);
+				object = new JSONObject();
+				object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
+				object.put("pageSize", pageSize);
+				object.put("currentPage", ids);
+				object.put("data", getImg(array2));
+			} catch (Exception e) {
+				object = null;
+			}
 		}
-		JSONArray array = getdb().dirty().page(ids, pageSize);
-		JSONArray array2 = dencode(array);
-		JSONObject object = new JSONObject();
-		object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
-		object.put("pageSize", pageSize);
-		object.put("currentPage", ids);
-		object.put("data", getImg(array2));
 		return resultMessage(object);
 	}
 
 	// 批量查询
 	public String Select(JSONObject object, int no) {
-		getdb().and();
-		for (Object obj : object.keySet()) {
-			if (obj.equals("_id")) {
-				getdb().eq("_id", new ObjectId(object.get("_id").toString()));
-			}
-			String value = object.get(obj.toString()).toString();
-			if (value.contains(",")) {
-				getCond(report, obj.toString(), value.split(","));
-			} else {
-				getdb().eq(obj.toString(), object.get(obj.toString()).toString());
+		JSONArray array = null;
+		if (object != null) {
+			try {
+				getdb().and();
+				for (Object obj : object.keySet()) {
+					if (obj.equals("_id")) {
+						getdb().eq("_id", new ObjectId(object.get("_id").toString()));
+					}
+					String value = object.get(obj.toString()).toString();
+					if (value.contains(",")) {
+						getCond(report, obj.toString(), value.split(","));
+					} else {
+						getdb().eq(obj.toString(), object.get(obj.toString()).toString());
+					}
+				}
+				array = new JSONArray();
+				array = getdb().limit(no).select();
+			} catch (Exception e) {
+				array = null;
 			}
 		}
-		JSONArray array = getdb().limit(no).select();
-		if (array.size() == 0) {
-			resultMessage(0, "");
-		}
-		JSONArray array2 = dencode(array);
-		return resultMessage(getImg(array2));
+		return resultMessage(getImg(dencode(array)));
 	}
 
 	private DBHelper getCond(DBHelper rep, String key, String[] values) {
@@ -275,22 +341,28 @@ public class ReportModel {
 	}
 
 	public String finds(JSONObject object) {
-		if (object == null) {
-			getdb().eq("state", 1L);
-		} else {
-			getdb().and();
-			for (Object obj : object.keySet()) {
-				if (obj.equals("_id")) {
-					getdb().eq("_id", new ObjectId(object.get("_id").toString()));
-				}
-				if (obj.equals("state")) {
-					getdb().eq(obj.toString(), Long.parseLong(object.get(obj.toString()).toString()));
-				} else {
-					getdb().like(obj.toString(), object.get(obj.toString()).toString());
+		JSONArray array = null;
+		try {
+			array = new JSONArray();
+			if (object == null) {
+				getdb().eq("state", 1L);
+			} else {
+				getdb().and();
+				for (Object obj : object.keySet()) {
+					if (obj.equals("_id")) {
+						getdb().eq("_id", new ObjectId(object.get("_id").toString()));
+					}
+					if (obj.equals("state")) {
+						getdb().eq(obj.toString(), Long.parseLong(object.get(obj.toString()).toString()));
+					} else {
+						getdb().like(obj.toString(), object.get(obj.toString()).toString());
+					}
 				}
 			}
+			array = getdb().limit(50).select();
+		} catch (Exception e) {
+			array = null;
 		}
-		JSONArray array = getdb().limit(50).select();
 		return resultMessage(getImg(dencode(array)));
 	}
 
@@ -317,31 +389,40 @@ public class ReportModel {
 	// 举报件处理完成
 	@SuppressWarnings("unchecked")
 	public int Complete(String id, JSONObject reasons) {
-		int code = 0;
-		if (!reasons.containsKey("state")) {
-			// if (!("2").equals(reasons.get("state").toString())) {
-			reasons.put("state", 2);
-			// }
-		}
-		if (!reasons.containsKey("completetime")) {
-			// if (("").equals(reasons.get("completetime").toString())) {
-			reasons.put("completetime", String.valueOf(TimeHelper.nowMillis()));
-			// }
-		}
-		if (reasons.containsKey("reason") && !("").equals(reasons.get("reason").toString())) {
-			reasons.put("reason", codec.DecodeHtmlTag(reasons.get("reason").toString()));
-		}
-		String message = SearchById(id);
-		String tip = JSONHelper.string2json(message).get("message").toString();
-		JSONObject records = (JSONObject) JSONHelper.string2json(tip).get("records");
-		if (records.containsKey("Rgroup")) {
-			if (!("").equals(records.get("Rgroup").toString())) {
-				getdb().eq("Rgroup", records.get("Rgroup").toString()).data(reasons).updateAll();
-			} else {
-				code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
+		int code = 99;
+		if (reasons != null) {
+			try {
+				if (!reasons.containsKey("state")) {
+					// if (!("2").equals(reasons.get("state").toString())) {
+					reasons.put("state", 2);
+					// }
+				}
+				if (!reasons.containsKey("completetime")) {
+					// if (("").equals(reasons.get("completetime").toString()))
+					// {
+					reasons.put("completetime", String.valueOf(TimeHelper.nowMillis()));
+					// }
+				}
+				if (reasons.containsKey("reason") && !("").equals(reasons.get("reason").toString())) {
+					reasons.put("reason", codec.DecodeHtmlTag(reasons.get("reason").toString()));
+				}
+				String message = SearchById(id);
+				if (JSONHelper.string2json(message) != null) {
+					String tip = JSONHelper.string2json(message).get("message").toString();
+					JSONObject records = (JSONObject) JSONHelper.string2json(tip).get("records");
+					if (records.containsKey("Rgroup")) {
+						if (!("").equals(records.get("Rgroup").toString())) {
+							getdb().eq("Rgroup", records.get("Rgroup").toString()).data(reasons).updateAll();
+						} else {
+							code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
+						}
+					} else {
+						code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
+					}
+				}
+			} catch (Exception e) {
+				code = 99;
 			}
-		} else {
-			code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
 		}
 		return code;
 	}
@@ -349,28 +430,36 @@ public class ReportModel {
 	// 举报拒绝
 	@SuppressWarnings("unchecked")
 	public int Refuse(String id, JSONObject reasons) {
-		int code = 0;
-		if (!reasons.containsKey("state")) {
-			reasons.put("state", 3);
-		}
-		if (!reasons.containsKey("refusetime")) {
-			reasons.put("refusetime", String.valueOf(TimeHelper.nowMillis()));
-		}
-		if (!reasons.containsKey("isdelete")) {
-			reasons.put("isdelete", 1);
-		}
-		String message = SearchById(id);
-		String tip = JSONHelper.string2json(message).get("message").toString();
-		if (!("").equals(tip)) {
-			JSONObject records = (JSONObject) JSONHelper.string2json(tip).get("records");
-			if (records.containsKey("Rgroup")) {
-				if (!("").equals(records.get("Rgroup").toString())) {
-					getdb().eq("Rgroup", records.get("Rgroup").toString()).data(reasons).updateAll();
-				} else {
-					code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
+		int code = 99;
+		if (reasons != null) {
+			try {
+				if (!reasons.containsKey("state")) {
+					reasons.put("state", 3);
 				}
-			} else {
-				code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
+				if (!reasons.containsKey("refusetime")) {
+					reasons.put("refusetime", String.valueOf(TimeHelper.nowMillis()));
+				}
+				if (!reasons.containsKey("isdelete")) {
+					reasons.put("isdelete", 1);
+				}
+				String message = SearchById(id);
+				if (JSONHelper.string2json(message) != null) {
+					String tip = JSONHelper.string2json(message).get("message").toString();
+					if (!("").equals(tip)) {
+						JSONObject records = (JSONObject) JSONHelper.string2json(tip).get("records");
+						if (records.containsKey("Rgroup")) {
+							if (!("").equals(records.get("Rgroup").toString())) {
+								getdb().eq("Rgroup", records.get("Rgroup").toString()).data(reasons).updateAll();
+							} else {
+								code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
+							}
+						} else {
+							code = getdb().eq("_id", new ObjectId(id)).data(reasons).update() != null ? 0 : 99;
+						}
+					}
+				}
+			} catch (Exception e) {
+				code = 99;
 			}
 		}
 		return code;
@@ -420,14 +509,18 @@ public class ReportModel {
 
 	// 查询个人相关的举报件
 	public String search(String userid, int no) {
-		JSONArray array = getdb().and().eq("userid", userid).ne("state", 0).limit(no).select();
+		JSONArray array = null;
+		try {
+			array = new JSONArray();
+			array = getdb().and().eq("userid", userid).ne("state", 0).limit(no).select();
+		} catch (Exception e) {
+			array = null;
+		}
 		JSONArray array2 = getImg(array);
 		return resultMessage(array2);
 	}
 
 	public String counts(String userid) {
-		// long count = getdb().eq("userid", userid).count();
-		// return resultMessage(0, String.valueOf(count));
 		String count = "";
 		JSONArray array = getdb().count("userid").group("userid");
 		JSONObject obj = new JSONObject();
@@ -455,7 +548,8 @@ public class ReportModel {
 		objs.put("$numberLong", "0");
 		for (int i = 0; i < array.size(); i++) {
 			obj = (JSONObject) array.get(i);
-			if (!obj.get("_id").toString().equals(objs.toString())) {
+			if (Integer.parseInt(obj.get("_id").toString()) != 0
+					&& !obj.get("_id").toString().equals(objs.toString())) {
 				continue;
 			}
 			count = Integer.parseInt(obj.get("count").toString());
@@ -480,7 +574,8 @@ public class ReportModel {
 		File tarFile = new File("\file\\tomcat\\webapps\\File\\upload\\" + Date + "\\Grape" + uuid + ".xls");
 		file.renameTo(tarFile);
 		String target = tarFile.toString();
-		target = "http://192.168.98.129:8080" + target.split("webapps")[1];
+		String hoString = "http://";
+		target = hoString + getAppIp("file").split("/")[1] + target.split("webapps")[1];
 		return resultMessage(0, target);
 	}
 
@@ -489,7 +584,7 @@ public class ReportModel {
 	public String SearchById(String id) {
 		JSONObject object = bind().eq("_id", new ObjectId(id)).find();
 		if (object == null) {
-			return resultMessage(0, "");
+			return resultMessage(0, "无符合条件的数据");
 		}
 		JSONObject preobj = find(object.get("time").toString(), "<");
 		JSONObject nextobj = find(object.get("time").toString(), ">");
@@ -501,14 +596,22 @@ public class ReportModel {
 	}
 
 	public String insert(JSONObject info) {
-		return getdb().data(info).insertOnce().toString();
+		String tip = null;
+		if (info != null) {
+			try {
+				tip = getdb().data(info).insertOnce().toString();
+			} catch (Exception e) {
+				tip = null;
+			}
+		}
+		return tip != null ? tip : "";
 	}
 
 	// 实名举报
 	public String RealName(JSONObject object) {
 		String openid = object.get("userid").toString();
 		// 判断是否实名认证
-		String message = appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
+		String message = appsProxy.proxyCall(callHost(), appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
 				.toString();
 		String tip = JSONHelper.string2json(message).get("message").toString();
 		if (!("").equals(tip)) {
@@ -519,7 +622,7 @@ public class ReportModel {
 			if (code == 0) {
 				String nextstep = appid + "/45/Report/insert/" + object.toString();
 				JSONObject object2 = interrupt._exist(phone, String.valueOf(appid));
-				if (object2!=null) {
+				if (object2 != null) {
 					interrupt._clear(phone, String.valueOf(appid));
 				}
 				boolean flag = interrupt._break(ckcode, phone, nextstep, appid + "");
@@ -533,13 +636,13 @@ public class ReportModel {
 	// 恢复当前操作
 	@SuppressWarnings("unchecked")
 	public String resu(JSONObject object) {
-		String message = "";
+		// String message = "";
 		session session = new session();
 		String openid = object.get("openid").toString();
 		// 判断是否实名认证
-		String messages = appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
+		String messages = appsProxy.proxyCall(callHost(), appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
 				.toString();
-		if (!("").equals(messages)) {
+		if (JSONHelper.string2json(messages) != null) {
 			String tips = JSONHelper.string2json(messages).get("message").toString();
 			// if (!("").equals(tips)) {
 			// return resultMessage(14);
@@ -563,18 +666,19 @@ public class ReportModel {
 			}
 			if (("2").equals(object.get("type").toString())) {
 				String url = appid + "/45/Report/insert/s:" + session.get(object.get("openid").toString());
-				String tip = appsProxy.proxyCall(getAppIp("host").split("/")[0], url, null, "").toString();
+				String tip = appsProxy.proxyCall(callHost(), url, null, "").toString();
 				// String message = appsProxy.proxyCall(host,
 				// "/15/wechatUser/FindById/"
 				// + object.get("openid").toString(),
 				// null, "").toString();
 				// return message;
 			}
-			message = appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
-					.toString();
+			// message = appsProxy.proxyCall(callHost(), appid +
+			// "/16/wechatUser/FindOpenId/" + openid, null, "")
+			// .toString();
 		}
-		nlogger.logout(" resume message" + message);
-		return message;
+		// nlogger.logout(" resume message" + message);
+		return messages;
 	}
 
 	// 验证内容是否含有敏感字符串
@@ -594,16 +698,14 @@ public class ReportModel {
 			return jGrapeFW_Message.netMSG(1, object.toString());
 		}
 		// 获取微信签名
-		String signMsg = appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/30/Wechat/getSignature/" + url, null, "")
-				.toString();
+		String signMsg = appsProxy.proxyCall(callHost(), appid + "/30/Wechat/getSignature/" + url, null, "").toString();
 		String sign = JSONHelper.string2json(signMsg).get("message").toString();
-		String openid = appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/30/Wechat/BindWechat/" + code, null, "")
-				.toString();
+		String openid = appsProxy.proxyCall(callHost(), appid + "/30/Wechat/BindWechat/" + code, null, "").toString();
 		if (openid.equals("")) {
 			return jGrapeFW_Message.netMSG(7, "code错误");
 		}
 		// 将获取到的openid与库表中的openid进行比对，若存在已绑定，否则未绑定
-		String message = appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
+		String message = appsProxy.proxyCall(callHost(), appid + "/16/wechatUser/FindOpenId/" + openid, null, "")
 				.toString();
 		nlogger.logout("message:" + message);
 		String tip = JSONHelper.string2json(message).get("message").toString();
@@ -645,7 +747,7 @@ public class ReportModel {
 			String nextstep = appid + "/16/wechatUser/insertOpenId/" + info;
 			// 2.中断[参数：随机验证码，手机号，下一步操作，appid]
 			JSONObject object2 = interrupt._exist(phone, String.valueOf(appid));
-			if (object2!=null) {
+			if (object2 != null) {
 				interrupt._clear(phone, String.valueOf(appid));
 			}
 			boolean flag = interrupt._break(ckcode, phone, nextstep, appid + "");
@@ -675,13 +777,14 @@ public class ReportModel {
 		if (!object.containsKey("time")) {
 			object.put("time", TimeHelper.nowMillis() + "");
 		}
-		return appsProxy.proxyCall(getAppIp("host").split("/")[0],
-				appid + "/16/wechatUser/KickUser/" + openid + "/" + object.toString(), null, "").toString();
+		return appsProxy
+				.proxyCall(callHost(), appid + "/16/wechatUser/KickUser/" + openid + "/" + object.toString(), null, "")
+				.toString();
 	}
 
 	// 解封
 	public String UserUnKick() {
-		return appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/16/wechatUser/unkick/", null, "").toString();
+		return appsProxy.proxyCall(callHost(), appid + "/16/wechatUser/unkick/", null, "").toString();
 	}
 
 	// 举报量统计
@@ -747,8 +850,7 @@ public class ReportModel {
 		object.put("content", StringHelper.join(list));
 		// 新增到事件组，获取组id
 		String message = appsProxy
-				.proxyCall(getAppIp("host").split("/")[0], appid + "/45/ReportGroup/AddRgroup" + object.toString(), null, "")
-				.toString();
+				.proxyCall(callHost(), appid + "/45/ReportGroup/AddRgroup" + object.toString(), null, "").toString();
 		String Rgroup = JSONHelper.string2json(message).get("message").toString();
 		if (!("").equals(Rgroup)) {
 			JSONObject objects = new JSONObject();
@@ -757,6 +859,52 @@ public class ReportModel {
 			return 0;
 		}
 		return 99;
+	}
+
+	// 获取会话信息数据
+	@SuppressWarnings("unchecked")
+	private JSONObject getSessPlv(Object object) {
+		JSONObject object2 = null;
+		session session = new session();
+		try {
+			JSONObject objects = new JSONObject();
+			int roleplv = 0;
+			object2 = new JSONObject();
+			if (object != null) {
+				object2 = session.getSession(object.toString());
+				if (object2 != null) {
+					String info = appsProxy
+							.proxyCall(getAppIp("host").split("/")[0],
+									appsProxy.appid() + "/16/roles/getRole/" + object2.get("ugid").toString(), null, "")
+							.toString();
+					objects = JSONHelper.string2json(info);
+					if (objects != null) {
+						objects = JSONHelper.string2json(objects.get("message").toString());
+					}
+					if (objects != null) {
+						objects = JSONHelper.string2json(objects.get("records").toString());
+					}
+					if (objects != null) {
+						roleplv = Integer.parseInt(objects.get("plv").toString());
+					}
+				}
+				object2.put("rolePlv", roleplv);
+			} else {
+				object2.put("rolePlv", 0);
+			}
+		} catch (Exception e) {
+			nlogger.logout(e);
+			object2 = null;
+		}
+		return object2;
+	}
+
+	private String callHost() {
+		return getAppIp("host").split("/")[0];
+	}
+
+	private String outerHost() {
+		return getAppIp("host").split("/")[1];
 	}
 
 	private String getAppIp(String key) {
@@ -855,56 +1003,102 @@ public class ReportModel {
 
 	@SuppressWarnings("unchecked")
 	private JSONArray getImg(JSONArray array) {
-		JSONArray array2 = new JSONArray();
-		if (array != null && !(" ").equals(array)) {
-			if (array.size() == 0) {
-				return array;
-			}
-			for (int i = 0; i < array.size(); i++) {
-				JSONObject object = (JSONObject) array.get(i);
-				array2.add(getImg(object));
+		JSONArray array2 = null;
+		if (array != null) {
+			try {
+				array2 = new JSONArray();
+				if (array.size() == 0) {
+					return array;
+				}
+				for (int i = 0; i < array.size(); i++) {
+					JSONObject object = (JSONObject) array.get(i);
+					array2.add(getImg(object));
+				}
+			} catch (Exception e) {
+				array2 = null;
 			}
 		}
 		return array2;
 	}
 
 	@SuppressWarnings("unchecked")
+	// private JSONObject getImg(JSONObject object) {
+	// if (object != null && !("").equals(object)) {
+	// List<String> liStrings = new ArrayList<String>();
+	// if (object.containsKey("attr1")) {
+	// object = getFile("attrFile1", object.get("attr1").toString(), object);
+	// }
+	// if (object.containsKey("attr2")) {
+	// object = getFile("attrFile2", object.get("attr2").toString(), object);
+	// }
+	// if (object.containsKey("attr3")) {
+	// object = getFile("attrFile3", object.get("attr3").toString(), object);
+	// }
+	// if (object.containsKey("attr4")) {
+	// object = getFile("attrFile4", object.get("attr4").toString(), object);
+	// }
+	// if (object.containsKey("mediaid")) {
+	// liStrings = getMedia(liStrings, object.get("mediaid").toString());
+	// }
+	// // 获取举报类型
+	// if (object.containsKey("type")) {
+	// object = getType(object);
+	// }
+	// if (imgList.size() != 0) {
+	// object.put("image", StringHelper.join(imgList));
+	// } else {
+	// object.put("image", "");
+	// }
+	// if (videoList.size() != 0) {
+	// object.put("video", StringHelper.join(videoList));
+	// } else {
+	// object.put("video", "");
+	// }
+	// if (liStrings.size() != 0) {
+	// object.put("media", StringHelper.join(liStrings));
+	// } else {
+	// object.put("media", "");
+	// }
+	// }
+	// return object;
+	// }
 	private JSONObject getImg(JSONObject object) {
-		if (object != null && !("").equals(object)) {
+		if (object != null) {
 			List<String> liStrings = new ArrayList<String>();
-			if (object.containsKey("attr1")) {
-				object = getFile("attrFile1", object.get("attr1").toString(), object);
-			}
-			if (object.containsKey("attr2")) {
-				object = getFile("attrFile2", object.get("attr2").toString(), object);
-			}
-			if (object.containsKey("attr3")) {
-				object = getFile("attrFile3", object.get("attr3").toString(), object);
-			}
-			if (object.containsKey("attr4")) {
-				object = getFile("attrFile4", object.get("attr4").toString(), object);
-			}
-			if (object.containsKey("mediaid")) {
-				liStrings = getMedia(liStrings, object.get("mediaid").toString());
-			}
-			// 获取举报类型
-			if (object.containsKey("type")) {
-				object = getType(object);
-			}
-			if (imgList.size() != 0) {
-				object.put("image", StringHelper.join(imgList));
-			} else {
-				object.put("image", "");
-			}
-			if (videoList.size() != 0) {
-				object.put("video", StringHelper.join(videoList));
-			} else {
-				object.put("video", "");
-			}
-			if (liStrings.size() != 0) {
-				object.put("media", StringHelper.join(liStrings));
-			} else {
-				object.put("media", "");
+			try {
+				if (object.containsKey("attr") && !("").equals(object.get("attr").toString())) {
+					String attr = object.get("attr").toString();
+					if (attr.contains(",")) {
+						String[] value = attr.split(",");
+						for (int i = 0; i < value.length; i++) {
+							object = getFile("attrFile" + i, value[i], object);
+						}
+					}
+				}
+				if (object.containsKey("mediaid")) {
+					liStrings = getMedia(liStrings, object.get("mediaid").toString());
+				}
+				// 获取举报类型
+				if (object.containsKey("type")) {
+					object = getType(object);
+				}
+				if (imgList.size() != 0) {
+					object.put("image", StringHelper.join(imgList));
+				} else {
+					object.put("image", "");
+				}
+				if (videoList.size() != 0) {
+					object.put("video", StringHelper.join(videoList));
+				} else {
+					object.put("video", "");
+				}
+				if (liStrings.size() != 0) {
+					object.put("media", StringHelper.join(liStrings));
+				} else {
+					object.put("media", "");
+				}
+			} catch (Exception e) {
+				object = null;
 			}
 		}
 		return object;
@@ -914,16 +1108,16 @@ public class ReportModel {
 		if (("").equals(mediaid)) {
 			return list;
 		}
-		String message = appsProxy.proxyCall(getAppIp("host").split("/")[0], appid + "/30/Wechat/downloadMedia/" + mediaid, null, "")
+		String message = appsProxy.proxyCall(callHost(), appid + "/30/Wechat/downloadMedia/" + mediaid, null, "")
 				.toString();
-		if (!("").equals(message)&&message!=null) {
+		if (JSONHelper.string2json(message) != null) {
 			String url = JSONHelper.string2json(message).get("message").toString();
-			url = "192.168.98.129:8080" + url;
+			url = outerHost() + url;
 			if (!("").equals(url)) {
 				list.add(url);
 			}
 		}
-		
+
 		return list;
 	}
 
@@ -931,10 +1125,10 @@ public class ReportModel {
 	private JSONObject getType(JSONObject object) {
 		String msg = "";
 		session session = new session();
-		if (object != null && !("").equals(object)) {
-			if (object.get("type")==null) {
+		if (object != null) {
+			if (object.get("type") == null) {
 				object.put("ReportType", "测试数据");
-			}else if (("0").equals(object.get("type").toString())) {
+			} else if (("0").equals(object.get("type").toString())) {
 				object.put("ReportType", "");
 			} else {
 				if (session.get(object.get("type").toString()) != null) {
@@ -946,7 +1140,7 @@ public class ReportModel {
 					}
 				} else {
 					String message = appsProxy
-							.proxyCall(getAppIp("host").split("/")[0],
+							.proxyCall(callHost(),
 									appsProxy.appid() + "/45/Rtype/findById/" + object.get("type").toString(), null, "")
 							.toString();
 					msg = JSONHelper.string2json(message).get("message").toString();
@@ -977,20 +1171,19 @@ public class ReportModel {
 
 	@SuppressWarnings("unchecked")
 	private JSONObject getFile(String key, String imgid, JSONObject object) {
-		session session = new session();
+		CacheHelper cache = new CacheHelper();
 		if (object != null && !("").equals(object)) {
 			if (!("").equals(imgid)) {
 				String fileInfo = "";
-				if (session.get(imgid) != null) {
-					fileInfo = session.get(imgid).toString();
+				if (cache.get(imgid) != null) {
+					fileInfo = cache.get(imgid).toString();
 				} else {
 					// 获取文件对象getAppIp("file")
 					String imgurl = "http://" + getAppIp("file").split("/")[1];
-					fileInfo = appsProxy.proxyCall(imgurl, appid + "/24/Files/getFile/" + imgid, null, "")
-							.toString();
-					if (!("").equals(fileInfo)&&fileInfo!=null) {
+					fileInfo = appsProxy.proxyCall(imgurl, appid + "/24/Files/getFile/" + imgid, null, "").toString();
+					if (!("").equals(fileInfo) && fileInfo != null) {
 						fileInfo = JSONHelper.string2json(fileInfo).get("message").toString();
-						session.setget(imgid, fileInfo);
+						cache.setget(imgid, fileInfo);
 					}
 				}
 				if (("").equals(fileInfo)) {
@@ -1001,10 +1194,10 @@ public class ReportModel {
 					if ("1".equals(object2.get("filetype").toString())) {
 						// imgList.add("http://123.57.214.226:8080" +
 						// object2.get("filepath").toString());
-						imgList.add("http://"+getAppIp("file").split("/")[1] + object2.get("filepath").toString());
+						imgList.add("http://" + getAppIp("file").split("/")[1] + object2.get("filepath").toString());
 					}
 					if ("2".equals(object2.get("filetype").toString())) {
-						videoList.add("http://"+getAppIp("file").split("/")[1] + object2.get("filepath").toString());
+						videoList.add("http://" + getAppIp("file").split("/")[1] + object2.get("filepath").toString());
 					}
 				}
 			}
@@ -1016,9 +1209,79 @@ public class ReportModel {
 		return checkHelper.checkMobileNumber(mob);
 	}
 
-	// private String getRecord(JSONArray array){
-	//
-	// }
+	// 合并举报件附件（视频，音频）
+	@SuppressWarnings("unchecked")
+	private JSONObject join(JSONObject object) {
+		List<String> list = null;
+		if (object != null) {
+			try {
+				list = new ArrayList<String>();
+				if (object.containsKey("attr1") && !("").equals(object.get("attr1").toString())) {
+					list.add(object.get("attr1").toString());
+				}
+				if (object.containsKey("attr2")) {
+					list.add(object.get("attr2").toString());
+				}
+				if (object.containsKey("attr3")) {
+					list.add(object.get("attr3").toString());
+				}
+				if (object.containsKey("attr4")) {
+					list.add(object.get("attr4").toString());
+				}
+				object.remove("attr1");
+				object.remove("attr2");
+				object.remove("attr3");
+				object.remove("attr4");
+			} catch (Exception e) {
+				nlogger.logout(e);
+				list = null;
+			}
+			if (list != null) {
+				object.put("attr", StringHelper.join(list));
+			} else {
+				object.put("attr", "");
+			}
+		}
+		return object;
+	}
+
+	// 实名举报
+	private String NonAnonymous(String userid, JSONObject object) {
+		String info = resultMessage(99);
+		// 判断用户是否被封号
+		String message = appsProxy.proxyCall(callHost(), appid + "/16/wechatUser/FindOpenId/" + userid, null, "")
+				.toString();
+		if (JSONHelper.string2json(message) != null) {
+			String msg = JSONHelper.string2json(message).get("message").toString();
+			if (JSONHelper.string2json(msg) == null) {
+				session session = new session();
+				session.setget(object.get("userid").toString(), object.toString());
+				return resultMessage(12);
+			}
+			if (("1").equals(JSONHelper.string2json(msg).get("isdelete").toString())) {
+				return resultMessage(9);
+			}
+			info = RealName(object);
+		}
+		return info;
+	}
+
+	// 匿名举报
+	private String Anonymous(JSONObject object) {
+		String info = resultMessage(99);
+		setCheck();
+		if (!form.checkRuleEx(object)) {
+			return resultMessage(1);
+		}
+		info = insert(object);
+		if (info == null) {
+			info = resultMessage(99);
+		} else {
+			info = SearchById(info);
+		}
+		return info != null ? info : resultMessage(0, "匿名举报失败");
+	}
+
 	// 设置验证项
 	private formHelper setCheck() {
 		// form.putRule("Wrongdoer", formdef.notNull);
@@ -1049,12 +1312,14 @@ public class ReportModel {
 	 */
 	@SuppressWarnings("unchecked")
 	public JSONObject AddMap(HashMap<String, Object> map, JSONObject object) {
-		if (map.entrySet() != null) {
-			Iterator<Entry<String, Object>> iterator = map.entrySet().iterator();
-			while (iterator.hasNext()) {
-				Map.Entry<String, Object> entry = (Map.Entry<String, Object>) iterator.next();
-				if (!object.containsKey(entry.getKey())) {
-					object.put(entry.getKey(), entry.getValue());
+		if (object != null) {
+			if (map.entrySet() != null) {
+				Iterator<Entry<String, Object>> iterator = map.entrySet().iterator();
+				while (iterator.hasNext()) {
+					Map.Entry<String, Object> entry = (Map.Entry<String, Object>) iterator.next();
+					if (!object.containsKey(entry.getKey())) {
+						object.put(entry.getKey(), entry.getValue());
+					}
 				}
 			}
 		}
@@ -1063,12 +1328,18 @@ public class ReportModel {
 
 	@SuppressWarnings("unchecked")
 	private String resultMessage(JSONObject object) {
+		if (object == null) {
+			object = new JSONObject();
+		}
 		_obj.put("records", object);
 		return resultMessage(0, _obj.toString());
 	}
 
 	@SuppressWarnings("unchecked")
 	private String resultMessage(JSONArray array) {
+		if (array == null) {
+			array = new JSONArray();
+		}
 		_obj.put("records", array);
 		return resultMessage(0, _obj.toString());
 	}

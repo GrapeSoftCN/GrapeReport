@@ -23,11 +23,11 @@ public class Report {
 	private static boolean initThread;
 	private ReportModel model = new ReportModel();
 	private HashMap<String, Object> map = new HashMap<>();
-	private ScheduledExecutorService service = Executors
-			.newSingleThreadScheduledExecutor();
-	static{
+	private ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
+	static {
 		initThread = false;
 	}
+
 	public Report() {
 		map.put("time", String.valueOf(TimeHelper.nowMillis()));
 		map.put("state", 0); // 0：已受理；1：处理中；2：已处理；3：被拒绝
@@ -42,13 +42,9 @@ public class Report {
 	}
 
 	// 新增
-	@SuppressWarnings("unchecked")
 	public String AddReport(String ReportInfo) {
-		JSONObject object = model.AddMap(map,
-				JSONHelper.string2json(ReportInfo));
-		object.put("content",
-				codec.encodebase64(object.get("content").toString()));
-		return model.Add(object.toString());
+		JSONObject object = model.AddMap(map, JSONHelper.string2json(ReportInfo));
+		return model.Add(object);
 	}
 
 	public String insert(String info) {
@@ -93,31 +89,37 @@ public class Report {
 
 	@SuppressWarnings("unchecked")
 	public String excel(String info) {
-		JSONObject object = new JSONObject();
-		JSONArray array = model.findexcel(JSONHelper.string2json(info));
-		for (int i = 0; i < array.size(); i++) {
-			object = (JSONObject) array.get(i);
-			for (Object obj : object.keySet()) {
-				String value = object.get(obj.toString()).toString();
-				if (value.contains("$numberLong")) {
-					JSONObject object2 = JSONHelper.string2json(value);
-					object.put(obj.toString(), Long.parseLong(object2.get("$numberLong").toString()));
+		JSONObject objs = JSONHelper.string2json(info);
+		JSONObject object = null;
+		if (objs != null) {
+			try {
+				object = new JSONObject();
+				JSONArray array = model.findexcel(objs);
+				for (int i = 0; i < array.size(); i++) {
+					object = (JSONObject) array.get(i);
+					for (Object obj : object.keySet()) {
+						String value = object.get(obj.toString()).toString();
+						if (value.contains("$numberLong")) {
+							JSONObject object2 = JSONHelper.string2json(value);
+							object.put(obj.toString(), Long.parseLong(object2.get("$numberLong").toString()));
+						}
+					}
 				}
+			} catch (Exception e) {
+				object = null;
 			}
 		}
-		return object.toString();
+		return object != null ? object.toString() : "";
 	}
+
 	// 举报件处理完成
 	public String CompleteReport(String id, String reson) {
-		return model.resultMessage(
-				model.Complete(id, JSONHelper.string2json(reson)), "举报件已处理完成");
+		return model.resultMessage(model.Complete(id, JSONHelper.string2json(reson)), "举报件已处理完成");
 	}
 
 	// 举报拒绝
 	public String RefuseReport(String id, String reson) {
-		return model.resultMessage(
-				model.Refuse(id, JSONHelper.string2json(reson)),
-				"举报情况不属实，已被拒绝处理");
+		return model.resultMessage(model.Refuse(id, JSONHelper.string2json(reson)), "举报情况不属实，已被拒绝处理");
 	}
 
 	// 举报件正在处理
@@ -131,16 +133,16 @@ public class Report {
 			object.put("state", 2);
 		}
 		// 添加操作日志
-//		JSONObject objects = new JSONObject();
+		// JSONObject objects = new JSONObject();
 		// object.put("OperateId", object.get("").toString());
-//		object.put("ReportId", id);
-//		object.put("time", TimeHelper.nowMillis());
-//		object.put("ContentLog", "");
-//		object.put("step", "该举报件已处理完结");
-//		appsProxy.proxyCall(
-//				"123.57.214.226:801", appsProxy.appid()
-//						+ "/45/ReportLog/Addlog/" + objects.toString(),
-//				null, "");
+		// object.put("ReportId", id);
+		// object.put("time", TimeHelper.nowMillis());
+		// object.put("ContentLog", "");
+		// object.put("step", "该举报件已处理完结");
+		// appsProxy.proxyCall(
+		// "123.57.214.226:801", appsProxy.appid()
+		// + "/45/ReportLog/Addlog/" + objects.toString(),
+		// null, "");
 		return model.resultMessage(model.Update(id, object), "举报件正在处理");
 	}
 
@@ -212,23 +214,20 @@ public class Report {
 
 	// 对用户进行封号
 	@SuppressWarnings("unchecked")
-	public String kick(String openid,String info) {
+	public String kick(String openid, String info) {
 		String code = "0";
 		JSONObject object = JSONHelper.string2json(info);
 		String message = model.UserKick(openid, object);
-		if (("0").equals(
-				JSONHelper.string2json(message).get("errorcode").toString())) {
+		if (("0").equals(JSONHelper.string2json(message).get("errorcode").toString())) {
 			if (object.containsKey("reason")) {
 				JSONObject obj = new JSONObject();
 				obj.put("reason", object.get("reason").toString());
-				String messages = RefuseReport(object.get("_id").toString(),
-						obj.toString());
-				code = String.valueOf(
-						JSONHelper.string2json(messages).get("errorcode"));
+				String messages = RefuseReport(object.get("_id").toString(), obj.toString());
+				code = String.valueOf(JSONHelper.string2json(messages).get("errorcode"));
 			}
 			return model.resultMessage(Integer.parseInt(code), "操作成功");
 		}
-		return model.resultMessage(18,"");
+		return model.resultMessage(18, "");
 	}
 
 	// 定时解封
@@ -274,19 +273,16 @@ public class Report {
 				day = Integer.parseInt(object.get("day").toString());
 			}
 		}
-		date.set(date.get(Calendar.YEAR), date.get(Calendar.MONTH),
-				date.get(Calendar.DATE), hour, 0, 0);
-		if( initThread == false ){
+		date.set(date.get(Calendar.YEAR), date.get(Calendar.MONTH), date.get(Calendar.DATE), hour, 0, 0);
+		if (initThread == false) {
 			initThread = true;
 			JSONObject jObject = appsProxy.configValue();
-			service.scheduleAtFixedRate( ()->{
+			service.scheduleAtFixedRate(() -> {
 				if (object.containsKey("phone")) {
 					int count = Integer.parseInt(model.TimerInsertCount(jObject));
-					if (count>0) {
-						ruoyaMASDB.sendSMS(
-								object.get("phone").toString(),
-								"24小时内，新增举报量为："+String.valueOf(count));
-					}else{
+					if (count > 0) {
+						ruoyaMASDB.sendSMS(object.get("phone").toString(), "24小时内，新增举报量为：" + String.valueOf(count));
+					} else {
 						nlogger.logout(".....");
 					}
 				} else {
