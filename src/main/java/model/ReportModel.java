@@ -99,10 +99,10 @@ public class ReportModel {
 				int mode = Integer.parseInt(object.get("mode").toString());
 				switch (mode) {
 				case 0:
-					NonAnonymous(userid, object);
+					info = NonAnonymous(userid, object);
 					break;
 				case 1:
-					Anonymous(object);
+					info = Anonymous(object);
 					break;
 				}
 			} catch (Exception e) {
@@ -709,16 +709,24 @@ public class ReportModel {
 				.toString();
 		nlogger.logout("message:" + message);
 		String tip = JSONHelper.string2json(message).get("message").toString();
-		if (!("").equals(tip)) {
-			object.put("msg", "已实名认证");
+		JSONObject object2 = JSONHelper.string2json(tip);
+		if (object2!=null) {
+			object2 = (JSONObject) object2.get("records");
+			System.out.println(object2);
+			if (object2!=null) {
+				object.put("msg", "已实名认证");
+				object.put("openid", openid);
+				object.put("headimgurl", object2.get("headimgurl").toString());
+				object.put("sign", sign);
+				return jGrapeFW_Message.netMSG(0, object.toString());
+			}
+			object.put("msg", "未实名认证");
 			object.put("openid", openid);
-			object.put("headimgurl", JSONHelper.string2json(tip).get("headimgurl").toString());
 			object.put("sign", sign);
-			return jGrapeFW_Message.netMSG(0, object.toString());
 		}
-		object.put("msg", "未实名认证");
-		object.put("openid", openid);
-		object.put("sign", sign);
+//		object.put("msg", "未实名认证");
+//		object.put("openid", openid);
+//		object.put("sign", sign);
 		return jGrapeFW_Message.netMSG(1, object.toString());
 	}
 
@@ -1253,10 +1261,14 @@ public class ReportModel {
 				.toString();
 		if (JSONHelper.string2json(message) != null) {
 			String msg = JSONHelper.string2json(message).get("message").toString();
-			if (JSONHelper.string2json(msg) == null) {
-				session session = new session();
-				session.setget(object.get("userid").toString(), object.toString());
-				return resultMessage(12);
+			JSONObject object2 = JSONHelper.string2json(msg);
+			if (object2 != null) {
+				object2= (JSONObject) object2.get("records");
+				if (object2==null) {
+					session session = new session();
+					session.setget(object.get("userid").toString(), object.toString());
+					return resultMessage(12);
+				}
 			}
 			if (("1").equals(JSONHelper.string2json(msg).get("isdelete").toString())) {
 				return resultMessage(9);
