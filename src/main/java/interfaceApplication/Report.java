@@ -39,6 +39,7 @@ public class Report {
 		map.put("completetime", "");
 		map.put("refusetime", "");
 		map.put("Rgroup", "");
+		map.put("priority", 1);
 	}
 
 	// 新增
@@ -291,5 +292,12 @@ public class Report {
 			}, 2, day, TimeUnit.SECONDS);
 		}
 		return model.resultMessage(0, "任务执行成功");
+	}
+
+	// 举报件督办
+	public String SetPriority(String id) {
+		String Priority = "{\"priority\":" + model.getPriority(id) + "}";
+		int code = model.Update(id, JSONHelper.string2json(Priority));
+		return model.resultMessage(code, "举报件督办成功");
 	}
 }
