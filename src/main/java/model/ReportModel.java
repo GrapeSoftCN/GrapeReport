@@ -69,6 +69,7 @@ public class ReportModel {
 	public ReportModel() {
 		UserInfo = session.getSession((String) execRequest.getChannelValue("sid"));
 	}
+
 	private static DBHelper getdb() {
 		return getdb(appsProxy.configValue());
 	}
@@ -194,6 +195,9 @@ public class ReportModel {
 		JSONObject object = new JSONObject();
 		JSONArray array = new JSONArray();
 		int roleSign = getRoleSign();
+		if (UserInfo == null) {
+			return resultMessage(20);
+		}
 		if (UserInfo != null) {
 			try {
 				// 获取角色权限
@@ -209,9 +213,53 @@ public class ReportModel {
 			} catch (Exception e) {
 				nlogger.logout(e);
 				object.put("totalSize", 0);
+				object.put("pageSize", pageSize);
+				object.put("currentPage", ids);
 				object.put("data", array);
 			}
-		}else{
+		}
+		return resultMessage(object);
+	}
+
+	// 条件分页
+	@SuppressWarnings("unchecked")
+	public String page(int ids, int pageSize, JSONObject objects) {
+		db db = getdb();
+		if (UserInfo == null) {
+			return resultMessage(20);
+		}
+		JSONObject object = new JSONObject();
+		JSONArray array = new JSONArray();
+		int roleSign = getRoleSign();
+		try {
+			if (objects != null) {
+				db.and();
+				for (Object obj : objects.keySet()) {
+					if (obj.equals("_id")) {
+						db.eq("_id", new ObjectId(objects.get("_id").toString()));
+					}
+					db.eq(obj.toString(), objects.get(obj.toString()));
+				}
+				// 获取角色权限
+				if (roleSign == 5 || roleSign == 4) {
+					array = db.desc("time").page(ids, pageSize);
+				}
+				if (roleSign == 3) {
+					array = db.eq("wbid", (String) UserInfo.get("currentWeb")).desc("time").page(ids, pageSize);
+				}
+				if (array.size() == 0) {
+					object.put("data", array);
+				} else {
+					JSONArray array2 = dencode(array);
+					object.put("data", getImg(array2));
+				}
+				object.put("totalSize", (int) Math.ceil((double) array.size() / pageSize));
+			} else {
+				object.put("totalSize", 0);
+				object.put("data", array);
+			}
+		} catch (Exception e) {
+			nlogger.logout(e);
 			object.put("totalSize", 0);
 			object.put("data", array);
 		}
@@ -254,38 +302,6 @@ public class ReportModel {
 			obj.put("reason", codec.decodebase64(obj.get("reason").toString()));
 		}
 		return obj;
-	}
-
-	// 条件分页
-	@SuppressWarnings("unchecked")
-	public String page(int ids, int pageSize, JSONObject objects) {
-		JSONObject object = null;
-		if (objects != null) {
-			try {
-				getdb().and();
-				for (Object obj : objects.keySet()) {
-					if (obj.equals("_id")) {
-						getdb().eq("_id", new ObjectId(objects.get("_id").toString()));
-					}
-					getdb().eq(obj.toString(), objects.get(obj.toString()));
-				}
-				object = new JSONObject();
-				JSONArray array = getdb().dirty().desc("time").page(ids, pageSize);
-				if (array.size() == 0) {
-					object.put("data", array);
-				} else {
-					JSONArray array2 = dencode(array);
-					object.put("data", getImg(array2));
-				}
-				object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
-				object.put("pageSize", pageSize);
-				object.put("currentPage", ids);
-			} catch (Exception e) {
-				nlogger.logout(e);
-				object = null;
-			}
-		}
-		return resultMessage(object);
 	}
 
 	// 模糊查询
@@ -799,6 +815,7 @@ public class ReportModel {
 			if (object2 != null) {
 				interrupt._clear(phone, String.valueOf(appid));
 			}
+//			interrupt._breakMust(chk, uniqueName, nextStep, appid)
 			boolean flag = interrupt._break(ckcode, phone, nextstep, appid + "");
 			code = flag ? 0 : 99;
 			// if (("2").equals(object.get("type").toString())) {
@@ -1391,7 +1408,7 @@ public class ReportModel {
 		return info;
 	}
 
-	//优先级加1
+	// 优先级加1
 	public int getPriority(String id) {
 		int priority = 0;
 		JSONObject object = bind().eq("_id", new ObjectId(id)).field("priority").find();
@@ -1530,6 +1547,9 @@ public class ReportModel {
 			break;
 		case 19:
 			msg = "服务次数已达到上限,获取用户信息异常，请稍后再试";
+			break;
+		case 20:
+			msg = "登录信息已失效";
 			break;
 		default:
 			msg = "其他操作异常";
