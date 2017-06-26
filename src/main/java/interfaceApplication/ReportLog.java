@@ -5,7 +5,7 @@ import org.json.simple.JSONObject;
 
 import apps.appsProxy;
 import database.db;
-import esayhelper.DBHelper;
+import database.DBHelper;
 import esayhelper.JSONHelper;
 import esayhelper.jGrapeFW_Message;
 

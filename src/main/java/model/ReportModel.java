@@ -2,7 +2,6 @@ package model;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.net.URLDecoder;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -10,38 +9,26 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 import java.util.UUID;
-import java.util.Base64.Decoder;
 import java.util.Map.Entry;
 
-import org.apache.commons.collections4.Get;
-import org.apache.commons.lang3.ObjectUtils.Null;
-import org.asynchttpclient.netty.ws.NettyWebSocket;
 import org.bson.types.ObjectId;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo.Id;
-import com.mongodb.util.JSON;
-import com.mysql.fabric.xmlrpc.base.Array;
-
 import apps.appsProxy;
 import authority.privilige;
-import cache.redis;
+import check.checkHelper;
+import check.formHelper;
+import check.formHelper.formdef;
+import database.DBHelper;
 import database.db;
+import database.userDBHelper;
 import esayhelper.CacheHelper;
-import esayhelper.DBHelper;
 import esayhelper.JSONHelper;
 import esayhelper.StringHelper;
 import esayhelper.TimeHelper;
-import esayhelper.checkHelper;
-import esayhelper.fileHelper;
-import esayhelper.formHelper;
 import esayhelper.jGrapeFW_Message;
-import esayhelper.formHelper.formdef;
-import filterword.WordFilter;
-import interfaceApplication.ReportGroup;
 import interrupt.interrupt;
 import nlogger.nlogger;
 import offices.excelHelper;
@@ -51,37 +38,45 @@ import session.session;
 import sms.ruoyaMASDB;
 
 public class ReportModel {
-	private static DBHelper report;
+	// private static DBHelper report;
+	private static userDBHelper report;
 	private static formHelper form;
 	private JSONObject _obj = new JSONObject();
 	private static int appid = appsProxy.appid();
 	private List<String> imgList = new ArrayList<>();
 	private List<String> videoList = new ArrayList<>();
-	private JSONObject UserInfo = new JSONObject();
+	private JSONObject UserInfo = null;
+	private String sid = null;
 	private static session session;
 
 	static {
 		session = new session();
-		report = ReportModel.getdb();
-		form = report.getChecker();
+		// report = new DBHelper(appsProxy.configValue().get("db").toString(),
+		// "reportInfo", "_id");
 	}
 
 	public ReportModel() {
-		UserInfo = session.getSession((String) execRequest.getChannelValue("sid"));
+		UserInfo = new JSONObject();
+		sid = (String) execRequest.getChannelValue("sid");
+		if (sid != null) {
+			UserInfo = session.getSession(sid);
+		}
+		report = new userDBHelper("reportInfo", sid);
+		form = report.getChecker();
 	}
 
-	private static DBHelper getdb() {
+	private static db getdb() {
 		return getdb(appsProxy.configValue());
 	}
 
-	private static DBHelper getdb(JSONObject threadifo) {
+	private static db getdb(JSONObject threadifo) {
 		DBHelper tmpdb = new DBHelper(threadifo.get("db").toString(), "reportInfo", "_id");
-		tmpdb.bind(String.valueOf(appid));
-		return tmpdb;
+		return tmpdb.bind(String.valueOf(appid));
 	}
 
 	private db bind() {
-		return report.bind(appid + "");
+		nlogger.logout(appsProxy.appid());
+		return report.bind(String.valueOf(appid));
 	}
 
 	// 新增
@@ -198,26 +193,28 @@ public class ReportModel {
 		if (UserInfo == null) {
 			return resultMessage(20);
 		}
-		if (UserInfo != null) {
-			try {
-				// 获取角色权限
-				if (roleSign == 5 || roleSign == 4) {
-					array = bind().desc("time").page(ids, pageSize);
-				}
-				if (roleSign == 3) {
-					array = bind().eq("wbid", (String) UserInfo.get("currentWeb")).desc("time").page(ids, pageSize);
-				}
-				JSONArray array2 = dencode(array); // 获取举报信息图片或者视频等
-				object.put("totalSize", (int) Math.ceil((double) array.size() / pageSize));
-				object.put("data", getImg(array2));
-			} catch (Exception e) {
-				nlogger.logout(e);
-				object.put("totalSize", 0);
-				object.put("pageSize", pageSize);
-				object.put("currentPage", ids);
-				object.put("data", array);
+		// if (UserInfo != null) {
+		try {
+			// 获取角色权限
+			if (roleSign == 5 || roleSign == 4) {
+				array = getdb().desc("time").page(ids, pageSize);
+			} else if (roleSign == 3 || roleSign == 2) {
+				array = getdb().eq("wbid", (String) UserInfo.get("currentWeb")).desc("time").page(ids, pageSize);
+			} else {
+				array = getdb().eq("slevel", 0).desc("time").page(ids, pageSize);
 			}
+			// array = bind().desc("time").page(ids, pageSize);
+			JSONArray array2 = dencode(array); // 获取举报信息图片或者视频等
+			object.put("totalSize", (int) Math.ceil((double) array.size() / pageSize));
+			object.put("data", getImg(array2));
+		} catch (Exception e) {
+			nlogger.logout(e);
+			object.put("totalSize", 0);
+			object.put("data", array);
 		}
+		object.put("pageSize", pageSize);
+		object.put("currentPage", ids);
+		// }
 		return resultMessage(object);
 	}
 
@@ -237,16 +234,30 @@ public class ReportModel {
 				for (Object obj : objects.keySet()) {
 					if (obj.equals("_id")) {
 						db.eq("_id", new ObjectId(objects.get("_id").toString()));
+					} else if (obj.equals("wbid")) {
+						// 查询所有的子站id
+						String string = "{\"fatherid\":\"" + obj.toString() + "\"}";
+						String webinfo = appsProxy
+								.proxyCall(callHost(), appid + "/17/WebInfo/Webfind/" + string, null, "").toString();
+						String wbid = getSubWeb(webinfo);
+						String[] value = wbid.split(",");
+						db.or();
+						for (String string2 : value) {
+							db.eq("_id", new ObjectId(string2));
+						}
+					} else {
+						db.eq(obj.toString(), objects.get(obj.toString()));
 					}
-					db.eq(obj.toString(), objects.get(obj.toString()));
 				}
 				// 获取角色权限
 				if (roleSign == 5 || roleSign == 4) {
 					array = db.desc("time").page(ids, pageSize);
-				}
-				if (roleSign == 3) {
+				} else if (roleSign == 3 || roleSign == 2) {
 					array = db.eq("wbid", (String) UserInfo.get("currentWeb")).desc("time").page(ids, pageSize);
+				} else {
+					array = bind().eq("slevel", 0).desc("time").page(ids, pageSize);
 				}
+				// array = db.desc("time").page(ids, pageSize);
 				if (array.size() == 0) {
 					object.put("data", array);
 				} else {
@@ -266,6 +277,53 @@ public class ReportModel {
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		return resultMessage(object);
+	}
+
+	@SuppressWarnings("unchecked")
+	public String PageBy(int idx, int pageSize, String info) {
+		db db = bind();
+		int role = getRoleSign();
+		JSONObject rs = new JSONObject();
+		JSONArray conds = JSONHelper.string2array(info);
+		JSONArray data = null;
+		db = db.where(conds);
+		switch (role) {
+		case 5: // 管理员
+		case 4:
+			break;
+		case 3:
+		case 2:
+		case 1:
+			String curweb = (String) UserInfo.get("currentWeb");
+			if (curweb != null) {
+				String webTree = (String) appsProxy.proxyCall(callHost(), "13/17/WebInfo/getWebTree/" + curweb, null,
+						null);
+				String[] webtree = webTree.split(",");
+				int i;
+				int l = webtree.length;
+				db.or();
+				for (i = 0; i < l; i++) {
+					if (!webtree[i].equals(curweb)) {
+						db.eq("wbid", webtree[i]);
+					}
+				}
+			} else {
+				db.eq("wbid", "");
+			}
+			break;
+		default:
+			db.eq("slevel", 0);
+			break;
+		}
+		data = db.dirty().desc("time").page(idx, pageSize);
+		if (data != null) {
+			int l = (int) Math.ceil((double) db.count() / pageSize);
+			rs.put("totalSize", l);
+			rs.put("pageSize", pageSize);
+			rs.put("currentPage", idx);
+			rs.put("data", getImg(dencode(data)));
+		}
+		return resultMessage(rs);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -310,11 +368,11 @@ public class ReportModel {
 		JSONObject object = null;
 		if (objects != null) {
 			try {
-				getdb().or();
+				db db = getdb().or();
 				for (Object obj : objects.keySet()) {
-					getdb().like(obj.toString(), objects.get(obj.toString()));
+					db.like(obj.toString(), objects.get(obj.toString()));
 				}
-				JSONArray array = getdb().dirty().page(ids, pageSize);
+				JSONArray array = db.dirty().page(ids, pageSize);
 				JSONArray array2 = dencode(array);
 				object = new JSONObject();
 				object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
@@ -539,7 +597,19 @@ public class ReportModel {
 			array = null;
 		}
 		JSONArray array2 = getImg(array);
-		return resultMessage(array2);
+		return resultMessage(dencode(array2));
+	}
+
+	public String searchs(String userid, int no) {
+		JSONArray array = null;
+		try {
+			array = new JSONArray();
+			array = getdb().and().eq("userid", userid).limit(no).select();
+		} catch (Exception e) {
+			array = null;
+		}
+		JSONArray array2 = getImg(array);
+		return resultMessage(dencode(array2));
 	}
 
 	public String counts(String userid) {
@@ -564,22 +634,42 @@ public class ReportModel {
 		return resultMessage(0, ("").equals(count) ? "0" : count);
 	}
 
-	@SuppressWarnings("unchecked")
+	// 统计已受理举报数量
 	public String counts() {
-		// long count = getdb().eq("state", 0).count();
-		int count = 0;
-		JSONArray array = getdb().count("state").group("state");
-		JSONObject obj = new JSONObject();
-		JSONObject objs = new JSONObject();
-		objs.put("$numberLong", "0");
-		for (int i = 0; i < array.size(); i++) {
-			obj = (JSONObject) array.get(i);
-			if (Integer.parseInt(obj.get("_id").toString()) != 0
-					&& !obj.get("_id").toString().equals(objs.toString())) {
-				continue;
-			}
-			count = Integer.parseInt(obj.get("count").toString());
+		long count = 0;
+		int roleSign = getRoleSign();
+		if (UserInfo == null) {
+			return resultMessage(20);
 		}
+		try {
+			// 获取角色权限
+			if (roleSign == 5 || roleSign == 4) {
+				count = getdb().eq("state", 0).count();
+			} else if (roleSign == 3 || roleSign == 2) {
+				count = getdb().eq("wbid", (String) UserInfo.get("currentWeb")).eq("state", 0).count();
+			} else {
+				count = getdb().eq("state", 0).eq("slevel", 0).count();
+			}
+			// count = getdb().eq("wbid", (String)
+			// UserInfo.get("currentWeb")).eq("state", 0).count();
+		} catch (Exception e) {
+			nlogger.logout(e);
+			count = 0;
+		}
+		// int count = 0;
+		// JSONArray array = getdb().count("state").group("state");
+		// JSONObject obj = new JSONObject();
+		// for (int i = 0; i < array.size(); i++) {
+		// obj = (JSONObject) array.get(i);
+		// String value = obj.get("_id").toString();
+		// if (value.contains("$numberLong")) {
+		// value = JSONHelper.string2json(value).get("$numberLong").toString();
+		// }
+		// if (Integer.parseInt(value) != 0) {
+		// continue;
+		// }
+		// count = Integer.parseInt(obj.get("count").toString());
+		// }
 		// return resultMessage(0, String.valueOf(count));
 		return resultMessage(0, String.valueOf(count));
 	}
@@ -670,7 +760,7 @@ public class ReportModel {
 	}
 
 	// 恢复当前操作
-	@SuppressWarnings({ "unchecked", "null" })
+	@SuppressWarnings({ "unchecked" })
 	public String resu(JSONObject object) {
 		session session = new session();
 		String openid = object.get("openid").toString();
@@ -721,13 +811,13 @@ public class ReportModel {
 		return message;
 	}
 
-	// 验证内容是否含有敏感字符串
-	public int checkCont(String content) {
-		if (WordFilter.isContains(content)) {
-			return 3;
-		}
-		return 0;
-	}
+	// // 验证内容是否含有敏感字符串
+	// public int checkCont(String content) {
+	// if (WordFilter.isContains(content)) {
+	// return 3;
+	// }
+	// return 0;
+	// }
 
 	// 获取用户openid，实名认证
 	@SuppressWarnings("unchecked")
@@ -815,7 +905,7 @@ public class ReportModel {
 			if (object2 != null) {
 				interrupt._clear(phone, String.valueOf(appid));
 			}
-//			interrupt._breakMust(chk, uniqueName, nextStep, appid)
+			// interrupt._breakMust(chk, uniqueName, nextStep, appid)
 			boolean flag = interrupt._break(ckcode, phone, nextstep, appid + "");
 			code = flag ? 0 : 99;
 			// if (("2").equals(object.get("type").toString())) {
@@ -880,7 +970,7 @@ public class ReportModel {
 	@SuppressWarnings("unchecked")
 	public String TimerInsertCount(JSONObject threadInfo) {
 		long InsertCount = 0;
-		DBHelper tmpdb = getdb(threadInfo);
+		db tmpdb = getdb(threadInfo);
 		if (tmpdb != null) {
 			long currentTime = TimeHelper.nowMillis();
 			String OpTime = String.valueOf(currentTime - 24 * 3600 * 1000);
@@ -927,6 +1017,67 @@ public class ReportModel {
 		return 99;
 	}
 
+	public int Selvel(String id) {
+		String[] value = getId(id);
+		int code = 99;
+		String condString = "{\"slevel\":0}";
+		try {
+			if (value.length == 1) {
+				code = bind().eq("_id", new ObjectId(id)).data(condString).update() != null ? 0 : 99;
+			} else {
+				db db = bind().or();
+				for (String _id : value) {
+					db.eq("_id", new ObjectId(_id));
+				}
+				code = db.data(condString).updateAll() == value.length ? 0 : 99;
+			}
+		} catch (Exception e) {
+			nlogger.logout(e);
+			code = 99;
+		}
+		return code;
+	}
+
+	private String getSubWeb(String webinfo) {
+		JSONObject object;
+		String records;
+		List<String> list = new ArrayList<String>();
+		object = JSONHelper.string2json(webinfo);
+		if (object != null) {
+			object = (JSONObject) object.get("message");
+			if (object != null) {
+				JSONObject objID;
+				records = object.get("records").toString();
+				JSONArray array = JSONHelper.string2array(records);
+				for (int i = 0; i < array.size(); i++) {
+					object = (JSONObject) array.get(i);
+					objID = (JSONObject) object.get("_id");
+					list.add(objID.get("$oid").toString());
+				}
+			}
+		}
+		return StringHelper.join(list);
+	}
+
+	private String[] getId(String id) {
+		List<String> list = new ArrayList<>();
+		JSONObject object;
+		String[] value = id.split(",");
+		for (String _id : value) {
+			object = bind().eq("_id", new ObjectId(_id)).field("slevel").find();
+			if (object != null) {
+				String slevel = object.get("slevel").toString();
+				if (slevel.contains("$numberLong")) {
+					slevel = JSONHelper.string2json(slevel).get("$numberLong").toString();
+				}
+				if (!("0").equals(slevel)) {
+					list.add(_id);
+				}
+			}
+		}
+		return StringHelper.join(list).split(",");
+	}
+
 	/**
 	 * 根据角色plv，获取角色级别
 	 * 
@@ -939,8 +1090,7 @@ public class ReportModel {
 	 */
 	private int getRoleSign() {
 		int roleSign = 0; // 游客
-		String sid = (String) execRequest.getChannelValue("sid");
-		if (!sid.equals("0")) {
+		if (sid != null) {
 			try {
 				privilige privil = new privilige(sid);
 				int roleplv = privil.getRolePV();
@@ -1194,12 +1344,13 @@ public class ReportModel {
 		String msg = "";
 		session session = new session();
 		if (object != null) {
-			if (object.get("type") == null) {
+			Object type = object.get("type");
+			if (type == null) {
 				object.put("ReportType", "测试数据");
-			} else if (("0").equals(object.get("type").toString())) {
+			} else if (("0").equals(type.toString()) || type.toString().length() < 24) {
 				object.put("ReportType", "");
 			} else {
-				if (session.get(object.get("type").toString()) != null) {
+				if (session.get(type.toString()) != null) {
 					msg = session.get(object.get("type").toString()).toString();
 					if (("").equals(msg)) {
 						object.put("ReportType", "");
@@ -1239,6 +1390,8 @@ public class ReportModel {
 
 	@SuppressWarnings("unchecked")
 	private JSONObject getFile(String key, String imgid, JSONObject object) {
+		String imgurl = "http://" + getAppIp("file").split("/")[1];
+		String temp;
 		CacheHelper cache = new CacheHelper();
 		if (object != null && !("").equals(object)) {
 			if (!("").equals(imgid)) {
@@ -1247,7 +1400,6 @@ public class ReportModel {
 					fileInfo = cache.get(imgid).toString();
 				} else {
 					// 获取文件对象getAppIp("file")
-					String imgurl = "http://" + getAppIp("file").split("/")[1];
 					fileInfo = appsProxy.proxyCall(imgurl, appid + "/24/Files/getFile/" + imgid, null, "").toString();
 					if (!("").equals(fileInfo) && fileInfo != null) {
 						fileInfo = JSONHelper.string2json(fileInfo).get("message").toString();
@@ -1258,15 +1410,23 @@ public class ReportModel {
 					object.put(key, "");
 				} else {
 					JSONObject object2 = JSONHelper.string2json(fileInfo);
-					object.put(key, object2);
 					if ("1".equals(object2.get("filetype").toString())) {
 						// imgList.add("http://123.57.214.226:8080" +
 						// object2.get("filepath").toString());
-						imgList.add("http://" + getAppIp("file").split("/")[1] + object2.get("filepath").toString());
+						imgList.add(imgurl + object2.get("filepath").toString());
 					}
 					if ("2".equals(object2.get("filetype").toString())) {
-						videoList.add("http://" + getAppIp("file").split("/")[1] + object2.get("filepath").toString());
+						videoList.add(imgurl + object2.get("filepath").toString());
 					}
+					if (object2.containsKey("ThumbnailImage")) {
+						temp = imgurl + object2.get("ThumbnailImage").toString();
+						object2.put("ThumbnailImage", temp);
+					}
+					if (object2.containsKey("ThumbnailVideo")) {
+						temp = imgurl + object2.get("ThumbnailVideo").toString();
+						object2.put("ThumbnailVideo", temp);
+					}
+					object.put(key, object2);
 				}
 			}
 		}
@@ -1464,6 +1624,141 @@ public class ReportModel {
 			}
 		}
 		return object;
+	}
+
+	public String AddWebReport(JSONObject object) {
+		String result = resultMessage(99);
+		if (UserInfo == null) {
+			return resultMessage(20);
+		}
+		try {
+			String content = (String) object.get("content");
+			String key = appsProxy
+					.proxyCall(callHost(), appsProxy.appid() + "/106/KeyWords/CheckKeyWords/" + content, null, "")
+					.toString();
+			JSONObject keywords = JSONHelper.string2json(key);
+			long codes = (Long) keywords.get("errorcode");
+			if (codes == 3) {
+				return resultMessage(3);
+			}
+			result = add(object);
+		} catch (Exception e) {
+			nlogger.logout(e);
+			result = resultMessage(99);
+		}
+		return result;
+	}
+
+	@SuppressWarnings("unchecked")
+	private String add(JSONObject object) {
+		String result = resultMessage(99);
+		int mode = Integer.parseInt(object.get("mode").toString());
+		try {
+			if (mode == 1) {
+				// 实名验证,发送短信验证码
+				result = Real(object);
+			} else {
+				object.put("content", codec.encodebase64(object.get("content").toString()));
+				result = insert(object.toString());
+			}
+		} catch (Exception e) {
+			result = resultMessage(99);
+		}
+		return result;
+	}
+
+	/**
+	 * 实名认证
+	 * 
+	 * @project GrapeSuggest
+	 * @package interfaceApplication
+	 * @file Suggest.java
+	 * 
+	 * @param object
+	 *            咨询建议信息
+	 * @param obj
+	 *            用户信息
+	 * @return
+	 *
+	 */
+	@SuppressWarnings("unchecked")
+	private String Real(JSONObject object) {
+		int code = 0;
+		// 发送验证码
+		String ckcode = getValidateCode();
+		nlogger.logout("验证码：" + ckcode);
+		try {
+			String phone = UserInfo.get("mobphone").toString();
+			if (SendVerity(phone, "验证码:" + ckcode) == 0) {
+				object.put("content", codec.encodebase64(object.get("content").toString())); // 对举报内容进行编码
+				String nextstep = appsProxy.appid() + "/45/Report/insert/" + object.toString();
+				JSONObject object2 = interrupt._exist(phone, String.valueOf(appsProxy.appid()));
+				if (object2 != null) {
+					code = interrupt._clear(phone, String.valueOf(appsProxy.appid())) == true ? 0 : 99;
+				}
+				if (code == 0) {
+					boolean flag = interrupt._breakMust(ckcode, phone, nextstep, String.valueOf(appsProxy.appid()));
+					code = flag ? 0 : 99;
+				}
+			}
+		} catch (Exception e) {
+			nlogger.logout(e);
+			code = 99;
+		}
+		return resultMessage(code, "验证码发送成功");
+	}
+
+	/**
+	 * 验证用户提交的验证码
+	 * 
+	 * @project GrapeSuggest
+	 * @package interfaceApplication
+	 * @file Suggest.java
+	 * 
+	 * @param ckcode
+	 * @param IDCard
+	 * @return
+	 *
+	 */
+	public String Resume(String ckcode, String IDCard) {
+		String string = resultMessage(99);
+		if (UserInfo != null) {
+			try {
+				if (IDCard.equals(UserInfo.get("IDCard").toString())) {
+					int code = interrupt._resume(ckcode, UserInfo.get("mobphone").toString(),
+							String.valueOf(appsProxy.appid()));
+					switch (code) {
+					case 0:
+						string = resultMessage(5);
+						break;
+					case 1:
+						string = resultMessage(6);
+						break;
+					}
+					string = resultMessage(0, "举报信息提交成功");
+				}
+			} catch (Exception e) {
+				nlogger.logout(e);
+				string = resultMessage(99);
+			}
+		}
+		return string;
+	}
+
+	public String insert(String info) {
+		int code = 99;
+		try {
+			code = getdb().data(info).insertOnce() != null ? 0 : 99;
+		} catch (Exception e) {
+			nlogger.logout(e);
+			code = 99;
+		}
+		return resultMessage(code, "提交成功");
+	}
+
+	public JSONObject check(JSONObject obj, HashMap<String, Object> map) {
+		JSONObject object = AddMap(map, obj);
+		return !form.checkRuleEx(object) ? null : object;
 	}
 
 	@SuppressWarnings("unchecked")

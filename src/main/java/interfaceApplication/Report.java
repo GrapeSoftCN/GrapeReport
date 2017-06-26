@@ -8,18 +8,24 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import org.bson.types.ObjectId;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 import apps.appsProxy;
+import database.db;
 import esayhelper.JSONHelper;
 import esayhelper.TimeHelper;
 import model.ReportModel;
 import nlogger.nlogger;
+import rpc.execRequest;
 import security.codec;
+import session.session;
 import sms.ruoyaMASDB;
 
 public class Report {
+	private JSONObject UserInfo = null;
+	private session session = new session();
 	private static boolean initThread;
 	private ReportModel model = new ReportModel();
 	private HashMap<String, Object> map = new HashMap<>();
@@ -29,6 +35,11 @@ public class Report {
 	}
 
 	public Report() {
+		UserInfo = new JSONObject();
+		String sid = (String) execRequest.getChannelValue("sid");
+		if (sid != null) {
+			UserInfo = session.getSession(sid);
+		}
 		map.put("time", String.valueOf(TimeHelper.nowMillis()));
 		map.put("state", 0); // 0：已受理；1：处理中；2：已处理；3：被拒绝
 		map.put("type", 0);
@@ -39,7 +50,9 @@ public class Report {
 		map.put("completetime", "");
 		map.put("refusetime", "");
 		map.put("Rgroup", "");
+		map.put("wbid", (UserInfo != null && UserInfo.size() != 0) ? UserInfo.get("currentWeb").toString() : "");
 		map.put("priority", 1);
+		map.put("slevel", 1);
 	}
 
 	// 新增
@@ -78,6 +91,9 @@ public class Report {
 		return model.page(ids, pageSize, JSONHelper.string2json(info));
 	}
 
+	public String PageBy(int ids, int pageSize, String info) {
+		return model.PageBy(ids, pageSize, info);
+	}
 	// 批量查询
 	public String BatchSelect(String info, int no) {
 		return model.Select(JSONHelper.string2json(info), no);
@@ -157,6 +173,11 @@ public class Report {
 		return model.search(userid, no);
 	}
 
+	// 查询个人相关的举报件
+	public String searchByUserId(String userid, int no) {
+		return model.searchs(userid, no);
+	}
+
 	public String FeedCount(String userid) {
 		return model.feed(userid);
 	}
@@ -183,11 +204,6 @@ public class Report {
 	// 恢复当前操作
 	public String resume(String info) {
 		return model.resu(JSONHelper.string2json(info));
-	}
-
-	// 验证内容是否含有敏感字符串
-	public String checkContent(String content) {
-		return model.resultMessage(model.checkCont(content), "不含敏感字符串");
 	}
 
 	// 获取用户openid，实名认证
@@ -299,5 +315,54 @@ public class Report {
 		String Priority = "{\"priority\":" + model.getPriority(id) + "}";
 		int code = model.Update(id, JSONHelper.string2json(Priority));
 		return model.resultMessage(code, "举报件督办成功");
+	}
+
+	// 网页端新增举报
+	public String AddReportWeb(String info) {
+		JSONObject obj = model.check(JSONHelper.string2json(info), map);
+		if (obj == null) {
+			return model.resultMessage(1, "");
+		}
+		return model.AddWebReport(obj);
+	}
+
+	// 网页端验证举报信息
+	public String Resume(String ckcode, String IDCard) {
+		return model.Resume(ckcode, IDCard);
+	}
+	
+	public String setSelvel(String id) {
+		return resultMessage(model.Selvel(id),"举报件公开设置成功");
+	}
+	// public String AddSuggest(String info) {
+	// String result = resultMessage(99);
+	// JSONObject object = model.check(info, def());
+	// if (UserInfo == null) {
+	// return resultMessage(2);
+	// }
+	// if (object == null) {
+	// return resultMessage(1);
+	// }
+	// try {
+	// String content = (String) object.get("content");
+	// String key = appsProxy.proxyCall(getHost(0), APPID +
+	// "/106/KeyWords/CheckKeyWords/" + content, null, "")
+	// .toString();
+	// JSONObject keywords = JSONHelper.string2json(key);
+	// long codes = (Long) keywords.get("errorcode");
+	// if (codes == 3) {
+	// return resultMessage(3);
+	// }
+	// result = add(object);
+	// } catch (Exception e) {
+	// Print(e);
+	// result = resultMessage(99);
+	// }
+	// return result;
+	// }
+
+	private String resultMessage(int selvel, String string) {
+		// TODO Auto-generated method stub
+		return null;
 	}
 }
