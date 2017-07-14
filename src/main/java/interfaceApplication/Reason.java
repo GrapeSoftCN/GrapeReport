@@ -4,13 +4,13 @@ import org.bson.types.ObjectId;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import JGrapeSystem.jGrapeFW_Message;
 import apps.appsProxy;
 import check.formHelper;
 import check.formHelper.formdef;
 import database.DBHelper;
 import database.db;
-import esayhelper.JSONHelper;
-import esayhelper.jGrapeFW_Message;
+import json.JSONHelper;
 import nlogger.nlogger;
 
 /**
@@ -147,6 +147,7 @@ public class Reason {
 				object.put("currentPage", ids);
 				object.put("pageSize", pageSize);
 				object.put("data", array);
+				bind().clear();
 			} catch (Exception e) {
 				object = null;
 			}
@@ -163,6 +164,7 @@ public class Reason {
 			object.put("count", Integer.parseInt(object.get("count").toString()) + 1);
 			return bind().data(object).update() != null ? resultMessage(0) : resultMessage(99);
 		}
+		bind().clear();
 		return resultMessage(99);
 	}
 

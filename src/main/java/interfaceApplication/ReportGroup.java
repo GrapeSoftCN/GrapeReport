@@ -2,11 +2,11 @@ package interfaceApplication;
 
 import org.json.simple.JSONObject;
 
+import JGrapeSystem.jGrapeFW_Message;
 import apps.appsProxy;
 import database.db;
+import json.JSONHelper;
 import database.DBHelper;
-import esayhelper.JSONHelper;
-import esayhelper.jGrapeFW_Message;
 
 public class ReportGroup {
 	private static DBHelper Rgroup;
@@ -29,12 +29,6 @@ public class ReportGroup {
 		Object object2 = bind().data(object).insertOnce();
 		return resultMessage(0, object2 != null ? object2.toString() : "");
 	}
-
-//	public String FindRgroup(String info) {
-//		JSONObject object = bind().eq("content", JSONHelper.string2json(info))
-//				.find();
-//		return resultMessage(0, object2 != null ? object2.toString() : "");
-//	}
 
 	private String resultMessage(int num, String message) {
 		String mString = "";

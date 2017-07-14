@@ -4,13 +4,13 @@ import org.bson.types.ObjectId;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import JGrapeSystem.jGrapeFW_Message;
 import apps.appsProxy;
 import check.formHelper;
 import check.formHelper.formdef;
 import database.DBHelper;
 import database.db;
-import esayhelper.JSONHelper;
-import esayhelper.jGrapeFW_Message;
+import json.JSONHelper;
 import nlogger.nlogger;
 import session.session;
 
@@ -141,6 +141,7 @@ public class Rtype {
 				object.put("currentPage", ids);
 				object.put("pageSize", pageSize);
 				object.put("data", array);
+				bind().clear();
 			}
 			catch(Exception e){
 				obj = null;
@@ -170,6 +171,27 @@ public class Rtype {
 		return object != null ? resultMessage(object) : resultMessage(0, "");
 	}
 
+	
+	@SuppressWarnings("unchecked")
+	public String FindByIds(String tid) {
+		String[] value = tid.split(",");
+		db db = bind().or();
+		for (String tempid : value) {
+			db.eq("_id", new ObjectId(tempid));
+		}
+		JSONArray array = db.field("_id,TypeName").select();
+		JSONObject object;
+		JSONObject objId;
+		JSONObject rObject = new JSONObject();
+		if (array != null && array.size() != 0) {
+			for (Object object2 : array) {
+				object = (JSONObject) object2;
+				objId = (JSONObject) object.get("_id");
+				rObject.put( objId.getString("$oid") , object.getString("TypeName"));
+			}
+		}
+		return rObject.toJSONString();
+	}
 	@SuppressWarnings("unchecked")
 	private String resultMessage(JSONObject object) {
 		if (object==null) {

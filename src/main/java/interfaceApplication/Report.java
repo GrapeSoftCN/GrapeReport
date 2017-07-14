@@ -3,25 +3,22 @@ package interfaceApplication;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import org.bson.types.ObjectId;
-import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
 import apps.appsProxy;
-import database.db;
-import esayhelper.JSONHelper;
-import esayhelper.TimeHelper;
+import json.JSONHelper;
 import model.ReportModel;
 import nlogger.nlogger;
 import rpc.execRequest;
-import security.codec;
 import session.session;
 import sms.ruoyaMASDB;
+import time.TimeHelper;
 
 public class Report {
 	private JSONObject UserInfo = null;
@@ -40,7 +37,7 @@ public class Report {
 		if (sid != null) {
 			UserInfo = session.getSession(sid);
 		}
-		map.put("time", String.valueOf(TimeHelper.nowMillis()));
+		map.put("time", TimeHelper.nowMillis());
 		map.put("state", 0); // 0：已受理；1：处理中；2：已处理；3：被拒绝
 		map.put("type", 0);
 		map.put("isdelete", 0);
@@ -50,7 +47,9 @@ public class Report {
 		map.put("completetime", "");
 		map.put("refusetime", "");
 		map.put("Rgroup", "");
-		map.put("wbid", (UserInfo != null && UserInfo.size() != 0) ? UserInfo.get("currentWeb").toString() : "");
+		// map.put("wbid", (UserInfo != null && UserInfo.size() != 0) ?
+		// UserInfo.get("currentWeb").toString() : "");
+		map.put("wbid", "595a24c81a4769cbf5fd9323");
 		map.put("priority", 1);
 		map.put("slevel", 1);
 	}
@@ -94,6 +93,7 @@ public class Report {
 	public String PageBy(int ids, int pageSize, String info) {
 		return model.PageBy(ids, pageSize, info);
 	}
+
 	// 批量查询
 	public String BatchSelect(String info, int no) {
 		return model.Select(JSONHelper.string2json(info), no);
@@ -102,31 +102,6 @@ public class Report {
 	// 条件查询，默认查询正在处理的举报件
 	public String find(String info) {
 		return model.finds(JSONHelper.string2json(info));
-	}
-
-	@SuppressWarnings("unchecked")
-	public String excel(String info) {
-		JSONObject objs = JSONHelper.string2json(info);
-		JSONObject object = null;
-		if (objs != null) {
-			try {
-				object = new JSONObject();
-				JSONArray array = model.findexcel(objs);
-				for (int i = 0; i < array.size(); i++) {
-					object = (JSONObject) array.get(i);
-					for (Object obj : object.keySet()) {
-						String value = object.get(obj.toString()).toString();
-						if (value.contains("$numberLong")) {
-							JSONObject object2 = JSONHelper.string2json(value);
-							object.put(obj.toString(), Long.parseLong(object2.get("$numberLong").toString()));
-						}
-					}
-				}
-			} catch (Exception e) {
-				object = null;
-			}
-		}
-		return object != null ? object.toString() : "";
 	}
 
 	// 举报件处理完成
@@ -173,8 +148,13 @@ public class Report {
 		return model.search(userid, no);
 	}
 
-	// 查询个人相关的举报件
+	// 查询个人相关的举报件,显示_id,content,time
 	public String searchByUserId(String userid, int no) {
+		return model.searchReport(userid, no);
+	}
+
+	// 查询个人相关的举报件，不包含content，reason
+	public String searchByIds(String userid, int no) {
 		return model.searchs(userid, no);
 	}
 
@@ -266,48 +246,102 @@ public class Report {
 	}
 
 	// 统计量
+	// public String ReportCount(String param) {
+	// return model.EventCounts(JSONHelper.string2json(param));
+	// }
 	public String ReportCount(String param) {
-		return model.EventCounts(JSONHelper.string2json(param));
+		return model.EventCounts(param);
 	}
 
 	// 统计量与全量比例
 	public String ReportPercent(String param) {
-		return model.PercentCounts(JSONHelper.string2json(param));
+		return model.PercentCounts(param);
 	}
 
 	// 定时发送增加量到管理员手机号
-	public String TimerSendCount(String param) {
-		JSONObject object = JSONHelper.string2json(param);
-		Calendar date = Calendar.getInstance();
-		int hour = 8, day = 1;
-		if (object.containsKey("hour")) {
-			if (!("").equals(object.get("hour").toString())) {
-				hour = Integer.parseInt(object.get("hour").toString());
-			}
+	// public String TimerSendCount(String param) {
+	// JSONObject object = JSONHelper.string2json(param);
+	// Calendar date = Calendar.getInstance();
+	// int hour = 8, day = 1;
+	// if (object.containsKey("hour")) {
+	// if (!("").equals(object.get("hour").toString())) {
+	// hour = Integer.parseInt(object.get("hour").toString());
+	// }
+	// }
+	// if (object.containsKey("day")) {
+	// if (!("").equals(object.get("day").toString())) {
+	// day = Integer.parseInt(object.get("day").toString());
+	// }
+	// }
+	// date.set(date.get(Calendar.YEAR), date.get(Calendar.MONTH),
+	// date.get(Calendar.DATE), hour, 0, 0);
+	// if (initThread == false) {
+	// initThread = true;
+	// JSONObject jObject = appsProxy.configValue();
+	// service.scheduleAtFixedRate(() -> {
+	// if (object.containsKey("phone")) {
+	// int count = Integer.parseInt(model.TimerInsertCount(jObject));
+	// if (count > 0) {
+	// ruoyaMASDB.sendSMS(object.get("phone").toString(), "24小时内，新增举报量为：" +
+	// String.valueOf(count));
+	// } else {
+	// nlogger.logout(".....");
+	// }
+	// } else {
+	// nlogger.logout("没有手机号，无法发送短信至管理员");
+	// }
+	// }, 2, day, TimeUnit.SECONDS);
+	// }
+	// return model.resultMessage(0, "任务执行成功");
+	// }
+
+	// 发送举报量信息到管理员 ,参数为管理员手机号，{"type":"hour","time":10}
+	// 默认为每天8点发送消息
+	public String Send2Manager(String phone, String time) {
+		int num = 1;
+		long period = 24 * 60 * 60 * 1000;
+		JSONObject object = JSONObject.toJSON(time);
+		String type = object.getString("type");
+		long times = (long) object.get("time");
+		if (object != null && object.containsKey("type") && object.containsKey("time")) {
+			period = type.equals("day") ? (times * 24 * 60 * 60 * 1000) : (times * 60 * 60 * 1000);
+			num = type.equals("day") ? new Long(times * 24).intValue() : new Long(times).intValue();
 		}
-		if (object.containsKey("day")) {
-			if (!("").equals(object.get("day").toString())) {
-				day = Integer.parseInt(object.get("day").toString());
-			}
+		Date date = new Date();
+		Calendar calendar = Calendar.getInstance();
+		Timer timer = new Timer();
+		calendar.set(Calendar.HOUR_OF_DAY, 8);
+		calendar.set(Calendar.MINUTE, 30);
+		calendar.set(Calendar.SECOND, 0);
+		date = calendar.getTime(); // 任务第一次执行时间 为每天的8点30，每天执行一次
+		if (date.before(new Date())) {
+			date = this.addDay(date, num);
 		}
-		date.set(date.get(Calendar.YEAR), date.get(Calendar.MONTH), date.get(Calendar.DATE), hour, 0, 0);
 		if (initThread == false) {
-			initThread = true;
+			// 获取举报信息增加量
 			JSONObject jObject = appsProxy.configValue();
-			service.scheduleAtFixedRate(() -> {
-				if (object.containsKey("phone")) {
-					int count = Integer.parseInt(model.TimerInsertCount(jObject));
-					if (count > 0) {
-						ruoyaMASDB.sendSMS(object.get("phone").toString(), "24小时内，新增举报量为：" + String.valueOf(count));
-					} else {
-						nlogger.logout(".....");
+			int count = Integer.parseInt(model.TimerInsertCount(jObject));
+			if (count > 0) {
+				initThread = true;
+				timer.schedule(new TimerTask() {
+					@Override
+					public void run() {
+						ruoyaMASDB.sendSMS(phone, "今天新增举报量为：" + count + "，请及时处理");
 					}
-				} else {
-					nlogger.logout("没有手机号，无法发送短信至管理员");
-				}
-			}, 2, day, TimeUnit.SECONDS);
+				}, date, period);
+			}
 		}
-		return model.resultMessage(0, "任务执行成功");
+		return model.resultMessage(0, "举报增量已发送至管理员");
+	}
+
+	// 增加或减少相应的天数
+	private Date addDay(Date date, int num) {
+		Calendar startDT = Calendar.getInstance();
+		startDT.setTime(date);
+		// startDT.add(Calendar.DAY_OF_MONTH, num);
+		startDT.add(Calendar.HOUR_OF_DAY, num);
+		nlogger.logout(startDT.getTime());
+		return startDT.getTime();
 	}
 
 	// 举报件督办
@@ -330,39 +364,10 @@ public class Report {
 	public String Resume(String ckcode, String IDCard) {
 		return model.Resume(ckcode, IDCard);
 	}
-	
-	public String setSelvel(String id) {
-		return resultMessage(model.Selvel(id),"举报件公开设置成功");
-	}
-	// public String AddSuggest(String info) {
-	// String result = resultMessage(99);
-	// JSONObject object = model.check(info, def());
-	// if (UserInfo == null) {
-	// return resultMessage(2);
-	// }
-	// if (object == null) {
-	// return resultMessage(1);
-	// }
-	// try {
-	// String content = (String) object.get("content");
-	// String key = appsProxy.proxyCall(getHost(0), APPID +
-	// "/106/KeyWords/CheckKeyWords/" + content, null, "")
-	// .toString();
-	// JSONObject keywords = JSONHelper.string2json(key);
-	// long codes = (Long) keywords.get("errorcode");
-	// if (codes == 3) {
-	// return resultMessage(3);
-	// }
-	// result = add(object);
-	// } catch (Exception e) {
-	// Print(e);
-	// result = resultMessage(99);
-	// }
-	// return result;
-	// }
 
-	private String resultMessage(int selvel, String string) {
-		// TODO Auto-generated method stub
-		return null;
+	public String setSelvel(String id) {
+		return model.resultMessage(model.Selvel(id), "举报件公开设置成功");
 	}
+	
+	
 }

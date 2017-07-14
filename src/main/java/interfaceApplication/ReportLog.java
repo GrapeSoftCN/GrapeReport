@@ -3,11 +3,11 @@ package interfaceApplication;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 
+import JGrapeSystem.jGrapeFW_Message;
 import apps.appsProxy;
 import database.db;
+import json.JSONHelper;
 import database.DBHelper;
-import esayhelper.JSONHelper;
-import esayhelper.jGrapeFW_Message;
 
 public class ReportLog {
 	private static DBHelper log;
@@ -55,6 +55,7 @@ public class ReportLog {
 		object.put("pageSize", pageSize);
 		object.put("currentPage", ids);
 		object.put("data", array);
+		bind().clear();
 		return resultMessage(object);
 	}
 
