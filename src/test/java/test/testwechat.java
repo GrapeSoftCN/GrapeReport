@@ -1,7 +1,6 @@
 package test;
 
 import httpServer.booter;
-import interfaceApplication.Report;
 
 public class testwechat {
 	public static void main(String[] args) {

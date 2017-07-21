@@ -15,11 +15,11 @@ import nlogger.nlogger;
 import session.session;
 
 public class Rtype {
-	private static DBHelper type;
-	private static formHelper form;
+	private DBHelper type;
+	private formHelper form;
 	private JSONObject _obj = new JSONObject();
 
-	static {
+	public Rtype() {
 		type = new DBHelper(appsProxy.configValue().get("db").toString(), "reportType");
 		form = type.getChecker();
 	}
@@ -142,8 +142,7 @@ public class Rtype {
 				object.put("pageSize", pageSize);
 				object.put("data", array);
 				bind().clear();
-			}
-			catch(Exception e){
+			} catch (Exception e) {
 				obj = null;
 			}
 		}
@@ -171,7 +170,6 @@ public class Rtype {
 		return object != null ? resultMessage(object) : resultMessage(0, "");
 	}
 
-	
 	@SuppressWarnings("unchecked")
 	public String FindByIds(String tid) {
 		String[] value = tid.split(",");
@@ -187,14 +185,15 @@ public class Rtype {
 			for (Object object2 : array) {
 				object = (JSONObject) object2;
 				objId = (JSONObject) object.get("_id");
-				rObject.put( objId.getString("$oid") , object.getString("TypeName"));
+				rObject.put(objId.getString("$oid"), object.getString("TypeName"));
 			}
 		}
 		return rObject.toJSONString();
 	}
+
 	@SuppressWarnings("unchecked")
 	private String resultMessage(JSONObject object) {
-		if (object==null) {
+		if (object == null) {
 			object = new JSONObject();
 		}
 		_obj.put("records", object);

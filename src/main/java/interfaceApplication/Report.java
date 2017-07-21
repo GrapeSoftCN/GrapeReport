@@ -49,7 +49,7 @@ public class Report {
 		map.put("Rgroup", "");
 		// map.put("wbid", (UserInfo != null && UserInfo.size() != 0) ?
 		// UserInfo.get("currentWeb").toString() : "");
-		map.put("wbid", "595a24c81a4769cbf5fd9323");
+		map.put("wbid", "");
 		map.put("priority", 1);
 		map.put("slevel", 1);
 	}
@@ -78,6 +78,11 @@ public class Report {
 	// 批量删除
 	public String DeleteBatchReport(String ids) {
 		return model.resultMessage(model.Delete(ids.split(",")), "删除成功");
+	}
+
+	/*前台分页显示*/
+	public String PageFront(String wbid,int idx, int pageSize,String info) {
+		return model.page2(wbid,idx, pageSize,info);
 	}
 
 	// 分页
@@ -149,13 +154,13 @@ public class Report {
 	}
 
 	// 查询个人相关的举报件,显示_id,content,time
-	public String searchByUserId(String userid, int no) {
-		return model.searchReport(userid, no);
+	public String searchByUserId(String wbid, String userid, int no) {
+		return model.searchReport(wbid, userid, no);
 	}
 
 	// 查询个人相关的举报件，不包含content，reason
-	public String searchByIds(String userid, int no) {
-		return model.searchs(userid, no);
+	public String searchByIds(String wbid, String userid, int no) {
+		return model.searchs(wbid, userid, no);
 	}
 
 	public String FeedCount(String userid) {
@@ -368,6 +373,5 @@ public class Report {
 	public String setSelvel(String id) {
 		return model.resultMessage(model.Selvel(id), "举报件公开设置成功");
 	}
-	
-	
+
 }

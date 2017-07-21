@@ -19,16 +19,13 @@ import nlogger.nlogger;
  *
  */
 public class Reason {
-	private static DBHelper Reason;
-	private static formHelper form;
+	private DBHelper Reason;
+	private formHelper form;
 	private JSONObject _obj = new JSONObject();
 
-	static {
+	private db bind() {
 		Reason = new DBHelper(appsProxy.configValue().get("db").toString(), "reportReson");
 		form = Reason.getChecker();
-	}
-
-	private db bind() {
 		return Reason.bind(String.valueOf(appsProxy.appid()));
 	}
 

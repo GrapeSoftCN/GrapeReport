@@ -4,18 +4,17 @@ import org.json.simple.JSONObject;
 
 import JGrapeSystem.jGrapeFW_Message;
 import apps.appsProxy;
+import database.DBHelper;
 import database.db;
 import json.JSONHelper;
-import database.DBHelper;
 
 public class ReportGroup {
-	private static DBHelper Rgroup;
+	private DBHelper Rgroup;
 
-	static {
+	public ReportGroup() {
 		Rgroup = new DBHelper(appsProxy.configValue().get("db").toString(),
 				"ReportGroup");
 	}
-
 	private db bind() {
 		return Rgroup.bind(appsProxy.appid() + "");
 	}
