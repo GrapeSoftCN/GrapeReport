@@ -68,7 +68,6 @@ public class ReportModel {
 	}
 
 	private db bind() {
-		nlogger.logout(appsProxy.appid());
 		return report.bind(String.valueOf(appid));
 	}
 
@@ -87,6 +86,8 @@ public class ReportModel {
 					if (content.length() > 500) {
 						return resultMessage(6);
 					}
+					content = codec.DecodeHtmlTag(content);
+					content = codec.decodebase64(content);
 					object.put("content", codec.encodebase64(content));
 				}
 				if (object.get("userid") == null) {
@@ -246,9 +247,10 @@ public class ReportModel {
 			} else {
 				db.eq("slevel", 0).desc("time");
 			}
-			array = db.page(ids, pageSize);
+			array = db.dirty().page(ids, pageSize);
 			JSONArray array2 = dencode(array);
 			object.put("totalSize", (int) Math.ceil((double) db.count() / pageSize));
+			db.clear();
 			object.put("data", getImg(array2));
 		} catch (Exception e) {
 			nlogger.logout(e);
@@ -276,7 +278,7 @@ public class ReportModel {
 						db.eq(obj.toString(), objects.get(obj.toString()));
 					}
 				}
-				if (roleSign == 6 ||roleSign == 5 || roleSign == 4) {
+				if (roleSign == 6 || roleSign == 5 || roleSign == 4) {
 					db.desc("time");
 				} else if (roleSign == 3 || roleSign == 2) {
 					db.eq("wbid", (String) UserInfo.get("currentWeb")).desc("time");
@@ -321,8 +323,7 @@ public class ReportModel {
 		case 1:
 			String curweb = (String) UserInfo.get("currentWeb");
 			if (curweb != null) {
-				String webTree = (String) appsProxy.proxyCall(callHost(), "13/17/WebInfo/getWebTree/" + curweb, null,
-						null);
+				String webTree = appsProxy.proxyCall("/GrapeWebInfo/WebInfo/getWebTree/" + curweb).toString();
 				String[] webtree = webTree.split(",");
 				int i;
 				int l = webtree.length;
@@ -870,17 +871,9 @@ public class ReportModel {
 			if (object.containsKey("type")) {
 				if (("2").equals(object.get("type").toString())) {
 					String url = appid + "/45/Report/insert/s:" + session.get(object.get("openid").toString());
-					appsProxy.proxyCall(callHost(), url, null, "").toString();
-					// String message = appsProxy.proxyCall(host,
-					// "/15/wechatUser/FindById/"
-					// + object.get("openid").toString(),
-					// null, "").toString();
-					// return message;
+					appsProxy.proxyCall(callHost(), url).toString();
 				}
 			}
-			// message = appsProxy.proxyCall(callHost(), appid +
-			// "/16/wechatUser/FindOpenId/" + openid, null, "")
-			// .toString();
 		}
 		// nlogger.logout(" resume message" + message);
 		return resultMessage(object2);
@@ -903,11 +896,9 @@ public class ReportModel {
 		try {
 			if (code != null && !code.equals("")) {
 				// 获取微信签名
-				String signMsg = appsProxy.proxyCall(callHost(), appid + "/30/Wechat/getSignature/" + url, null, "")
-						.toString();
-				nlogger.logout(signMsg);
+				String signMsg = appsProxy.proxyCall("/GrapeWechat/Wechat/getSignature/" + url).toString();
 				String sign = JSONHelper.string2json(signMsg).get("message").toString();
-				openid = appsProxy.proxyCall(callHost(), appid + "/30/Wechat/BindWechat/" + code, null, "").toString();
+				openid = appsProxy.proxyCall("/GrapeWechat/Wechat/BindWechat/" + code).toString();
 				if (openid.equals("")) {
 					return jGrapeFW_Message.netMSG(7, "code错误");
 				}
@@ -997,7 +988,7 @@ public class ReportModel {
 			object.put("time", TimeHelper.nowMillis() + "");
 		}
 		return appsProxy
-				.proxyCall(callHost(), appid + "/16/wechatUser/KickUser/" + openid + "/" + object.toString(), null, "")
+				.proxyCall("/GrapeUser/wechatUser/KickUser/" + openid + "/" + object.toString(), null, "")
 				.toString();
 	}
 
@@ -1007,7 +998,7 @@ public class ReportModel {
 		if (role == 6) {
 			return resultMessage(20);
 		}
-		return appsProxy.proxyCall(callHost(), appid + "/16/wechatUser/unkick/", null, "").toString();
+		return appsProxy.proxyCall("/GrapeUser/wechatUser/unkick/").toString();
 	}
 
 	// // 举报量统计
@@ -1084,7 +1075,7 @@ public class ReportModel {
 		object.put("content", StringHelper.join(list));
 		// 新增到事件组，获取组id
 		String message = appsProxy
-				.proxyCall(callHost(), appid + "/45/ReportGroup/AddRgroup" + object.toString(), null, "").toString();
+				.proxyCall("/GrapeReport/ReportGroup/AddRgroup" + object.toString(), null, "").toString();
 		String Rgroup = JSONHelper.string2json(message).get("message").toString();
 		if (!("").equals(Rgroup)) {
 			JSONObject objects = new JSONObject();
@@ -1116,6 +1107,7 @@ public class ReportModel {
 		return code;
 	}
 
+	/*
 	private String getSubWeb(String webinfo) {
 		JSONObject object;
 		String records;
@@ -1136,7 +1128,7 @@ public class ReportModel {
 		}
 		return StringHelper.join(list);
 	}
-
+*/
 	private String[] getId(String id) {
 		List<String> list = new ArrayList<>();
 		JSONObject object;
@@ -1171,7 +1163,7 @@ public class ReportModel {
 		if (sid != null) {
 			try {
 				privilige privil = new privilige(sid);
-				int roleplv = privil.getRolePV(appsProxy.appidString());
+				int roleplv = privil.getRolePV(String.valueOf(appid));
 				if (roleplv >= 1000 && roleplv < 3000) {
 					roleSign = 1; // 普通用户即企业员工
 				}
@@ -1320,7 +1312,7 @@ public class ReportModel {
 		videoList = new ArrayList<>();
 		int l = array.size();
 		JSONObject object;
-		String fileInfo = appsProxy.proxyCall(outerHost(), appsProxy.appid() + "/24/Files/getFiles/" + fid, null, "")
+		String fileInfo = appsProxy.proxyCall("/GrapeFile/Files/getFiles/" + fid)
 				.toString();
 		JSONObject fileObj = JSONObject.toJSON(fileInfo);
 		JSONObject FileInfoObj;
@@ -1408,7 +1400,7 @@ public class ReportModel {
 		if (("").equals(mediaid)) {
 			return list;
 		}
-		String message = appsProxy.proxyCall(callHost(), appid + "/30/Wechat/downloadMedia/" + mediaid, null, "")
+		String message = appsProxy.proxyCall("/GrapeWechat/Wechat/downloadMedia/" + mediaid)
 				.toString();
 		if (JSONHelper.string2json(message) != null) {
 			String url = JSONHelper.string2json(message).get("message").toString();
@@ -1441,8 +1433,7 @@ public class ReportModel {
 					}
 				} else {
 					String message = appsProxy
-							.proxyCall(callHost(),
-									appsProxy.appid() + "/45/Rtype/findById/" + object.get("type").toString(), null, "")
+							.proxyCall("/GrapeReport/Rtype/findById/" + object.get("type").toString(), null, "")
 							.toString();
 					msg = JSONHelper.string2json(message).get("message").toString();
 					if (("").equals(msg)) {
@@ -1482,7 +1473,7 @@ public class ReportModel {
 					fileInfo = cache.get(imgid).toString();
 				} else {
 					// 获取文件对象getAppIp("file")
-					fileInfo = appsProxy.proxyCall(imgurl, appid + "/24/Files/getFile/" + imgid, null, "").toString();
+					fileInfo = appsProxy.proxyCall("/GrapeReport/Files/getFile/" + imgid).toString();
 					if (!("").equals(fileInfo) && fileInfo != null) {
 						fileInfo = JSONHelper.string2json(fileInfo).get("message").toString();
 						cache.setget(imgid, fileInfo);
@@ -1596,7 +1587,7 @@ public class ReportModel {
 		if (cache.get(openid + "Info") != null) {
 			info = cache.get(openid + "Info").toString();
 		} else {
-			info = appsProxy.proxyCall(callHost(), appid + "/16/wechatUser/FindOpenId/" + openid, null, "").toString();
+			info = appsProxy.proxyCall("/GrapeWechat/wechatUser/FindOpenId/" + openid).toString();
 			cache.setget(openid + "Info", info);
 		}
 		JSONObject object2 = JSONHelper.string2json(info);
@@ -1623,9 +1614,7 @@ public class ReportModel {
 					newimg.replaceAll("=", "@m");
 				}
 				object.put("headimgurl", newimg);
-				appsProxy.proxyCall(callHost(),
-						appsProxy.appid() + "/16/wechatUser/UpdateInfo/s:" + openid + "/s:" + object.toString(), null,
-						"").toString();
+				appsProxy.proxyCall("/GrapeUser/wechatUser/UpdateInfo/s:" + openid + "/s:" + object.toString()).toString();
 			}
 			obj = FindByopenid(openid);
 		} catch (Exception e) {
@@ -1636,11 +1625,12 @@ public class ReportModel {
 	}
 
 	// 根据微信id获取微信头像
+	@SuppressWarnings("unchecked")
 	private JSONObject getHeadurl(String openid) {
 		JSONObject object = new JSONObject();
 		try {
 			String userinfo = appsProxy
-					.proxyCall(callHost(), appsProxy.appid() + "/30/Wechat/getUserInfo/s:" + openid, null, "")
+					.proxyCall("/GrapeWechat/Wechat/getUserInfo/s:" + openid, null, "")
 					.toString();
 			if (JSONHelper.string2json(userinfo) != null) {
 				String message = JSONHelper.string2json(userinfo).get("message").toString();
@@ -1715,6 +1705,7 @@ public class ReportModel {
 		return object;
 	}
 
+	@SuppressWarnings("unchecked")
 	public String AddWebReport(JSONObject object) {
 		String result = resultMessage(99);
 		try {
@@ -1777,7 +1768,6 @@ public class ReportModel {
 		int code = 0;
 		// 发送验证码
 		String ckcode = getValidateCode();
-		nlogger.logout("验证码：" + ckcode);
 		try {
 			String phone = UserInfo.get("mobphone").toString();
 			if (SendVerity(phone, "验证码:" + ckcode) == 0) {
@@ -1848,8 +1838,12 @@ public class ReportModel {
 	}
 
 	public JSONObject check(JSONObject obj, HashMap<String, Object> map) {
+		JSONObject rsobj = null;
 		JSONObject object = AddMap(map, obj);
-		return !form.checkRuleEx(object) ? null : object;
+		if (object != null) {
+			rsobj = !form.checkRuleEx(object) ? null : object;
+		}
+		return rsobj;
 	}
 
 	@SuppressWarnings("unchecked")

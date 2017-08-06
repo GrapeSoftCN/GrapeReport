@@ -14,7 +14,6 @@ import org.json.simple.JSONObject;
 import apps.appsProxy;
 import json.JSONHelper;
 import model.ReportModel;
-import nlogger.nlogger;
 import rpc.execRequest;
 import session.session;
 import sms.ruoyaMASDB;
@@ -42,14 +41,13 @@ public class Report {
 		map.put("type", 0);
 		map.put("isdelete", 0);
 		map.put("mode", 0);
-		map.put("reason", "");
+		map.put("reason", ""); // 举报反馈，拒绝举报理由，已处理举报件反馈
 		map.put("handletime", "");
 		map.put("completetime", "");
 		map.put("refusetime", "");
 		map.put("Rgroup", "");
-		// map.put("wbid", (UserInfo != null && UserInfo.size() != 0) ?
-		// UserInfo.get("currentWeb").toString() : "");
-		map.put("wbid", "");
+		map.put("wbid", (UserInfo != null && UserInfo.size() != 0) ? UserInfo.get("currentWeb").toString() : "");
+//		 map.put("wbid", "595a2594189ad9c9223fab7d");   //举报系统
 		map.put("priority", 1);
 		map.put("slevel", 1);
 	}
@@ -80,9 +78,9 @@ public class Report {
 		return model.resultMessage(model.Delete(ids.split(",")), "删除成功");
 	}
 
-	/*前台分页显示*/
-	public String PageFront(String wbid,int idx, int pageSize,String info) {
-		return model.page2(wbid,idx, pageSize,info);
+	/* 前台分页显示 */
+	public String PageFront(String wbid, int idx, int pageSize, String info) {
+		return model.page2(wbid, idx, pageSize, info);
 	}
 
 	// 分页
@@ -345,7 +343,6 @@ public class Report {
 		startDT.setTime(date);
 		// startDT.add(Calendar.DAY_OF_MONTH, num);
 		startDT.add(Calendar.HOUR_OF_DAY, num);
-		nlogger.logout(startDT.getTime());
 		return startDT.getTime();
 	}
 
