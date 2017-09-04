@@ -58,6 +58,10 @@ public class ReportModel {
 		}
 	}
 
+	public db getDB() {
+		return report.bind(String.valueOf(appid));
+	}
+
 	private db getdb() {
 		return getdb(appsProxy.configValue());
 	}
@@ -197,46 +201,64 @@ public class ReportModel {
 	}
 
 	/** 前台分页显示 */
-	@SuppressWarnings("unchecked")
 	public String page2(String wbid, int ids, int pageSize, String info) {
+		long totalSize = 0, total = 0;
+		JSONObject userInfo;
 		db db = getdb();
-		JSONObject object = new JSONObject();
 		JSONArray array = new JSONArray();
 		JSONObject objects = JSONObject.toJSON(info);
-		String key;
+		String key, value = null;
 		try {
 			if (objects != null) {
+				if (wbid != null && !wbid.equals("")) {
+					db.eq("wbid", wbid);
+				}
 				for (Object obj : objects.keySet()) {
 					key = obj.toString();
-					db.eq(key, objects.get(key));
+					if (key.equals("userid")) {
+						value = objects.getString(key);
+						userInfo = session.getSession(value);
+						value = (userInfo != null && userInfo.size() != 0)
+								? ((JSONObject) userInfo.get("_id")).getString("$oid") : " ";
+					}
+					db.eq(key, value);
 				}
-				db.eq("wbid", wbid);
 				array = db.dirty().page(ids, pageSize);
-				JSONArray array2 = dencode(array);
-				object.put("data", getImg(array2));
-				object.put("totalSize", (int) Math.ceil((double) db.count() / pageSize));
-			} else {
-				object.put("totalSize", 0);
-				object.put("data", array);
+				totalSize = db.dirty().pageMax(pageSize);
+				total = db.count();
 			}
 		} catch (Exception e) {
 			nlogger.logout(e);
-			object.put("totalSize", 0);
-			object.put("data", array);
 		} finally {
 			db.clear();
 		}
-		object.put("pageSize", pageSize);
-		object.put("currentPage", ids);
-		return resultMessage(object);
+		return pageShow(array, ids, pageSize, total, totalSize);
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONObject getCond(JSONObject condObj) {
+		JSONObject userInfo;
+		String key, value, id;
+		if (condObj != null && condObj.size() != 0) {
+			for (Object obj : condObj.keySet()) {
+				key = obj.toString();
+				if (key.equals("userid")) {
+					value = condObj.getString(key);
+					userInfo = session.getSession(value);
+					id = (userInfo != null && userInfo.size() != 0)
+							? ((JSONObject) userInfo.get("_id")).getString("$oid") : "";
+					condObj.put("userid", id);
+				}
+			}
+		}
+		return condObj;
 	}
 
 	// 分页
-	@SuppressWarnings("unchecked")
 	public String page(int ids, int pageSize) {
+		long totalSize = 0, total = 0;
 		db db = getdb();
-		JSONObject object = new JSONObject();
-		JSONArray array = new JSONArray();
+		JSONArray array = null;
 		int roleSign = getRoleSign();
 		try {
 			// 获取角色权限
@@ -248,26 +270,20 @@ public class ReportModel {
 				db.eq("slevel", 0).desc("time");
 			}
 			array = db.dirty().page(ids, pageSize);
-			JSONArray array2 = dencode(array);
-			object.put("totalSize", (int) Math.ceil((double) db.count() / pageSize));
+			totalSize = db.dirty().pageMax(pageSize);
+			total = db.count();
 			db.clear();
-			object.put("data", getImg(array2));
 		} catch (Exception e) {
 			nlogger.logout(e);
-			object.put("totalSize", 0);
-			object.put("data", array);
 		}
-		object.put("pageSize", pageSize);
-		object.put("currentPage", ids);
-		return resultMessage(object);
+		return pageShow(array, ids, pageSize, total, totalSize);
 	}
 
 	// 条件分页
-	@SuppressWarnings("unchecked")
 	public String page(int ids, int pageSize, JSONObject objects) {
 		int roleSign = getRoleSign();
+		long total = 0, totalSize = 0;
 		db db = getdb();
-		JSONObject object = new JSONObject();
 		JSONArray array = new JSONArray();
 		try {
 			if (objects != null) {
@@ -286,51 +302,87 @@ public class ReportModel {
 					db.eq("slevel", 0).desc("time");
 				}
 				array = db.dirty().page(ids, pageSize);
-				JSONArray array2 = dencode(array);
-				object.put("data", getImg(array2));
-				object.put("totalSize", (int) Math.ceil((double) db.count() / pageSize));
-			} else {
-				object.put("totalSize", 0);
-				object.put("data", array);
+				totalSize = db.dirty().pageMax(pageSize);
+				total = db.count();
 			}
 		} catch (Exception e) {
 			nlogger.logout(e);
-			object.put("totalSize", 0);
-			object.put("data", array);
 		} finally {
 			db.clear();
 		}
-		object.put("pageSize", pageSize);
-		object.put("currentPage", ids);
-		return resultMessage(object);
+		return pageShow(array, ids, pageSize, total, totalSize);
 	}
 
-	@SuppressWarnings("unchecked")
+	// public String PageBy(int idx, int pageSize, String info) {
+	// long total = 0,totalSize = 0;
+	// db db = bind();
+	// int role = getRoleSign();
+	// JSONArray conds = JSONHelper.string2array(info);
+	// JSONArray data = null;
+	// db = db.where(conds);
+	// switch (role) {
+	// case 6:
+	// case 5: // 管理员
+	// case 4:
+	// break;
+	// case 3:
+	// case 2:
+	// case 1:
+	// String curweb = (String) UserInfo.get("currentWeb");
+	// if (curweb != null) {
+	// String webTree = appsProxy.proxyCall("/GrapeWebInfo/WebInfo/getWebTree/"
+	// + curweb, null, null)
+	// .toString();
+	// String[] webtree = webTree.split(",");
+	// int i;
+	// int l = webtree.length;
+	// db.or();
+	// for (i = 0; i < l; i++) {
+	// if (!webtree[i].equals(curweb)) {
+	// db.eq("wbid", webtree[i]);
+	// }
+	// }
+	// } else {
+	// db.eq("wbid", "");
+	// }
+	// break;
+	// default:
+	// db.eq("slevel", 0);
+	// break;
+	// }
+	// data = db.dirty().desc("time").page(idx, pageSize);
+	// total = db.dirty().count();
+	// totalSize = db.pageMax(pageSize);
+	// db.clear();
+	// return pageShow(data, idx, pageSize, total, totalSize);
+	// }
+
 	public String PageBy(int idx, int pageSize, String info) {
-		db db = bind();
 		int role = getRoleSign();
-		JSONObject rs = new JSONObject();
-		JSONArray conds = JSONHelper.string2array(info);
+		long totalSize = 0, total = 0;
 		JSONArray data = null;
-		db = db.where(conds);
+		db db = bind();
+		if (info != null) {
+			JSONArray conds = JSONHelper.string2array(info);
+			db = db.where(conds);
+		}
 		switch (role) {
-		case 6:
+		case 6: // jw
 		case 5: // 管理员
 		case 4:
 			break;
-		case 3:
+		case 3: // 网站管理员
 		case 2:
 		case 1:
 			String curweb = (String) UserInfo.get("currentWeb");
 			if (curweb != null) {
-				String webTree = appsProxy.proxyCall("/GrapeWebInfo/WebInfo/getWebTree/" + curweb).toString();
+				String webTree = (String) appsProxy.proxyCall("/GrapeWebInfo/WebInfo/getChildwebs/" + curweb, null,
+						null);
 				String[] webtree = webTree.split(",");
-				int i;
-				int l = webtree.length;
-				db.or();
-				for (i = 0; i < l; i++) {
-					if (!webtree[i].equals(curweb)) {
-						db.eq("wbid", webtree[i]);
+				if (!webtree.equals("")) {
+					db.or();
+					for (String string : webtree) {
+						db.eq("wbid", string);
 					}
 				}
 			} else {
@@ -342,40 +394,28 @@ public class ReportModel {
 			break;
 		}
 		data = db.dirty().desc("time").page(idx, pageSize);
-		if (data != null) {
-			int l = (int) Math.ceil((double) db.count() / pageSize);
-			rs.put("totalSize", l);
-			rs.put("pageSize", pageSize);
-			rs.put("currentPage", idx);
-			rs.put("data", getImg(dencode(data)));
-		}
+		total = db.dirty().count();
+		totalSize = db.pageMax(pageSize);
 		db.clear();
-		return resultMessage(rs);
+		return pageShow(data, idx, pageSize, total, totalSize);
 	}
 
 	@SuppressWarnings("unchecked")
 	private JSONArray dencode(JSONArray array) {
-		JSONArray arry = null;
 		try {
 			if (array.size() == 0) {
 				return array;
 			}
-			arry = new JSONArray();
 			for (int i = 0; i < array.size(); i++) {
 				JSONObject object = (JSONObject) array.get(i);
-				if (object.containsKey("content") && !("").equals(object.get("content").toString())) {
-					object.put("content", codec.decodebase64(object.get("content").toString()));
-				}
-				if (object.containsKey("reason") && !("").equals(object.get("reason").toString())) {
-					object.put("reason", codec.decodebase64(object.get("reason").toString()));
-				}
-				arry.add(object);
+				dencode(object);
+				array.set(i, object);
 			}
 		} catch (Exception e) {
 			nlogger.logout(e);
 			array = null;
 		}
-		return arry;
+		return array;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -392,30 +432,25 @@ public class ReportModel {
 	}
 
 	// 模糊查询
-	@SuppressWarnings("unchecked")
 	public String find(int ids, int pageSize, JSONObject objects) {
-		JSONObject object = null;
+		long totalSize = 0, total = 0;
+		JSONArray array = null;
 		if (objects != null) {
 			try {
 				db db = getdb().or();
 				for (Object obj : objects.keySet()) {
 					db.like(obj.toString(), objects.get(obj.toString()));
 				}
-				JSONArray array = db.dirty().page(ids, pageSize);
-				JSONArray array2 = dencode(array);
-				object = new JSONObject();
-				object.put("totalSize", (int) Math.ceil((double) getdb().count() / pageSize));
-				object.put("pageSize", pageSize);
-				object.put("currentPage", ids);
-				object.put("data", getImg(array2));
+				array = db.dirty().page(ids, pageSize);
+				totalSize = db.dirty().pageMax(pageSize);
+				total = db.count();
 			} catch (Exception e) {
 				nlogger.logout(e);
-				object = null;
 			} finally {
 				getdb().clear();
 			}
 		}
-		return resultMessage(object);
+		return pageShow(array, ids, pageSize, total, totalSize);
 	}
 
 	// 批量查询
@@ -627,6 +662,27 @@ public class ReportModel {
 		return resultMessage(dencode(array2));
 	}
 
+	public String show(int idx, int pageSize) {
+		long totalSize = 0, total = 0;
+		JSONArray array = null;
+		db db = bind();
+		try {
+			if (UserInfo != null && UserInfo.size() != 0) {
+				JSONObject obj = (JSONObject) UserInfo.get("_id");
+				String userid = (String) obj.get("$oid");
+				db.eq("userid", userid);
+				array = db.dirty().field("_id,content,time,handletime,completetime,refusetime,state,reason").dirty()
+						.desc("time").page(idx, pageSize);
+				totalSize = db.dirty().pageMax(pageSize);
+				total = db.count();
+				db.clear();
+			}
+		} catch (Exception e) {
+			nlogger.logout(e);
+		}
+		return pageShow(array, idx, pageSize, total, totalSize);
+	}
+
 	public String searchs(String wbid, String userid, int no) {
 		JSONArray array = null;
 		try {
@@ -677,46 +733,39 @@ public class ReportModel {
 			nlogger.logout(e);
 			count = "";
 		}
-		// return resultMessage(0, String.valueOf(count));
 		return resultMessage(0, ("").equals(count) ? "0" : count);
 	}
 
 	// 统计已受理举报数量
 	public String counts() {
-		// long count = getdb().eq("state", 0).count();
 		db db = getdb();
 		long count = 0;
-		int roleSign = getRoleSign();
-		if (UserInfo == null) {
-			return resultMessage(20);
-		}
+		// int roleSign = getRoleSign();
 		try { // 获取角色权限
-			if (roleSign == 3 || roleSign == 2) {
-				db.eq("wbid", UserInfo.get("currentWeb").toString());
-			} else if (roleSign == 1 || roleSign == 0) {
-				db.eq("slevel", 0);
+				// if (roleSign == 3 || roleSign == 2) {
+				// db.eq("wbid", UserInfo.get("currentWeb").toString());
+				// } else if (roleSign == 1 || roleSign == 0) {
+				// db.eq("slevel", 0);
+				// }
+			if (UserInfo != null && UserInfo.size() != 0) {
+				String curweb = UserInfo.get("currentWeb").toString();
+				String webTree = (String) appsProxy.proxyCall("/GrapeWebInfo/WebInfo/getChildwebs/" + curweb, null,
+						null);
+				String[] webtree = webTree.split(",");
+				if (!webtree.equals("")) {
+					db.or();
+					for (String string : webtree) {
+						db.eq("wbid", string);
+					}
+				}
+				db.and();
+				count = db.eq("state", 0).count();
 			}
-			count = db.eq("state", 0).count();
 		} catch (Exception e) {
 			nlogger.logout(e);
 			count = 0;
 		}
 
-		// int count = 0;
-		// JSONArray array = getdb().count("state").group("state");
-		// JSONObject obj = new JSONObject();
-		// for (int i = 0; i < array.size(); i++) {
-		// obj = (JSONObject) array.get(i);
-		// String value = obj.get("_id").toString();
-		// if (value.contains("$numberLong")) {
-		// value = JSONHelper.string2json(value).get("$numberLong").toString();
-		// }
-		// if (Integer.parseInt(value) != 0) {
-		// continue;
-		// }
-		// count = Integer.parseInt(obj.get("count").toString());
-		// }
-		// return resultMessage(0, String.valueOf(count));
 		return resultMessage(0, String.valueOf(count));
 	}
 
@@ -871,7 +920,7 @@ public class ReportModel {
 			if (object.containsKey("type")) {
 				if (("2").equals(object.get("type").toString())) {
 					String url = appid + "/45/Report/insert/s:" + session.get(object.get("openid").toString());
-					appsProxy.proxyCall(callHost(), url).toString();
+					appsProxy.proxyCall(callHost(), url, null, null).toString();
 				}
 			}
 		}
@@ -896,9 +945,9 @@ public class ReportModel {
 		try {
 			if (code != null && !code.equals("")) {
 				// 获取微信签名
-				String signMsg = appsProxy.proxyCall("/GrapeWechat/Wechat/getSignature/" + url).toString();
+				String signMsg = appsProxy.proxyCall("/GrapeWechat/Wechat/getSignature/" + url, null, null).toString();
 				String sign = JSONHelper.string2json(signMsg).get("message").toString();
-				openid = appsProxy.proxyCall("/GrapeWechat/Wechat/BindWechat/" + code).toString();
+				openid = appsProxy.proxyCall("/GrapeWechat/Wechat/BindWechat/" + code, null, null).toString();
 				if (openid.equals("")) {
 					return jGrapeFW_Message.netMSG(7, "code错误");
 				}
@@ -987,8 +1036,7 @@ public class ReportModel {
 		if (!object.containsKey("time")) {
 			object.put("time", TimeHelper.nowMillis() + "");
 		}
-		return appsProxy
-				.proxyCall("/GrapeUser/wechatUser/KickUser/" + openid + "/" + object.toString(), null, "")
+		return appsProxy.proxyCall("/GrapeUser/wechatUser/KickUser/" + openid + "/" + object.toString(), null, "")
 				.toString();
 	}
 
@@ -998,7 +1046,7 @@ public class ReportModel {
 		if (role == 6) {
 			return resultMessage(20);
 		}
-		return appsProxy.proxyCall("/GrapeUser/wechatUser/unkick/").toString();
+		return appsProxy.proxyCall("/GrapeUser/wechatUser/unkick/", null, null).toString();
 	}
 
 	// // 举报量统计
@@ -1074,8 +1122,8 @@ public class ReportModel {
 		}
 		object.put("content", StringHelper.join(list));
 		// 新增到事件组，获取组id
-		String message = appsProxy
-				.proxyCall("/GrapeReport/ReportGroup/AddRgroup" + object.toString(), null, "").toString();
+		String message = appsProxy.proxyCall("/GrapeReport/ReportGroup/AddRgroup" + object.toString(), null, "")
+				.toString();
 		String Rgroup = JSONHelper.string2json(message).get("message").toString();
 		if (!("").equals(Rgroup)) {
 			JSONObject objects = new JSONObject();
@@ -1108,27 +1156,16 @@ public class ReportModel {
 	}
 
 	/*
-	private String getSubWeb(String webinfo) {
-		JSONObject object;
-		String records;
-		List<String> list = new ArrayList<String>();
-		object = JSONHelper.string2json(webinfo);
-		if (object != null) {
-			object = (JSONObject) object.get("message");
-			if (object != null) {
-				JSONObject objID;
-				records = object.get("records").toString();
-				JSONArray array = JSONHelper.string2array(records);
-				for (int i = 0; i < array.size(); i++) {
-					object = (JSONObject) array.get(i);
-					objID = (JSONObject) object.get("_id");
-					list.add(objID.get("$oid").toString());
-				}
-			}
-		}
-		return StringHelper.join(list);
-	}
-*/
+	 * private String getSubWeb(String webinfo) { JSONObject object; String
+	 * records; List<String> list = new ArrayList<String>(); object =
+	 * JSONHelper.string2json(webinfo); if (object != null) { object =
+	 * (JSONObject) object.get("message"); if (object != null) { JSONObject
+	 * objID; records = object.get("records").toString(); JSONArray array =
+	 * JSONHelper.string2array(records); for (int i = 0; i < array.size(); i++)
+	 * { object = (JSONObject) array.get(i); objID = (JSONObject)
+	 * object.get("_id"); list.add(objID.get("$oid").toString()); } } } return
+	 * StringHelper.join(list); }
+	 */
 	private String[] getId(String id) {
 		List<String> list = new ArrayList<>();
 		JSONObject object;
@@ -1158,12 +1195,12 @@ public class ReportModel {
 	 * @return
 	 *
 	 */
-	private int getRoleSign() {
+	public int getRoleSign() {
 		int roleSign = 0; // 游客
-		if (sid != null) {
+		if (sid != null && !sid.equals("")) {
 			try {
 				privilige privil = new privilige(sid);
-				int roleplv = privil.getRolePV(String.valueOf(appid));
+				int roleplv = privil.getRolePV(appsProxy.appidString());
 				if (roleplv >= 1000 && roleplv < 3000) {
 					roleSign = 1; // 普通用户即企业员工
 				}
@@ -1188,6 +1225,37 @@ public class ReportModel {
 			}
 		}
 		return roleSign;
+	}
+
+	/**
+	 * 分页显示格式
+	 * 
+	 * @project GrapeSuggest
+	 * @package interfaceApplication
+	 * @file Suggest.java
+	 * 
+	 * @param array
+	 * @param idx
+	 * @param pageSize
+	 * @param total
+	 * @param totalSize
+	 * @return
+	 *
+	 */
+	@SuppressWarnings("unchecked")
+	private String pageShow(JSONArray array, int idx, int pageSize, long total, long totalSize) {
+		JSONObject obj = new JSONObject();
+		if (array != null) {
+			array = getImg(dencode(array));
+		} else {
+			array = new JSONArray();
+		}
+		obj.put("data", array);
+		obj.put("totalSize", totalSize);
+		obj.put("pageSize", pageSize);
+		obj.put("currentPage", idx);
+		obj.put("total", total);
+		return resultMessage(obj);
 	}
 
 	private String FileHost(int signal) {
@@ -1278,6 +1346,8 @@ public class ReportModel {
 	 */
 
 	private JSONArray getImg(JSONArray array) {
+		String fileInfo = "";
+		String tempid;
 		JSONObject object;
 		String fid = "";
 		if (array != null) {
@@ -1289,67 +1359,71 @@ public class ReportModel {
 				for (int i = 0, len = l; i < len; i++) {
 					object = (JSONObject) array.get(i);
 					if (object.containsKey("attr") && !("").equals(object.get("attr").toString())) {
-						fid += object.get("attr").toString() + ",";
+						tempid = object.getString("attr");
+						if (ObjectId.isValid(tempid)) {
+							fid += tempid + ",";
+						}
 					}
 				}
 				if (fid.length() > 1) {
 					fid = StringHelper.fixString(fid, ',');
 				}
 				if (!fid.equals("")) {
-					array = getMediaInfo(array, fid);
+					fileInfo = appsProxy.proxyCall("/GrapeFile/Files/getFiles/" + fid, null, null).toString();
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
+			}
+		}
+		return getFile(array, fileInfo);
+	}
+
+	@SuppressWarnings("unchecked")
+	private JSONArray getFile(JSONArray array, String fileInfo) {
+		JSONObject fileObj = JSONObject.toJSON(fileInfo);
+		JSONObject object;
+		if (array == null || array.size() == 0) {
+			return null;
+		}
+		int l = array.size();
+		if (fileObj != null) {
+			for (int i = 0, len = l; i < len; i++) {
+				object = (JSONObject) array.get(i);
+				object = FillData(object, fileObj);
+				array.set(i, object);
 			}
 		}
 		return array;
 	}
 
 	@SuppressWarnings("unchecked")
-	private JSONArray getMediaInfo(JSONArray array, String fid) {
-		List<String> liStrings = new ArrayList<>();
-		imgList = new ArrayList<>();
-		videoList = new ArrayList<>();
-		int l = array.size();
-		JSONObject object;
-		String fileInfo = appsProxy.proxyCall("/GrapeFile/Files/getFiles/" + fid)
-				.toString();
-		JSONObject fileObj = JSONObject.toJSON(fileInfo);
+	private JSONObject FillData(JSONObject object, JSONObject FileObj) {
+		String attrlist = "", filetype = "";
+		String[] attr;
 		JSONObject FileInfoObj;
-		if (fileObj != null) {
-			String[] attr;
-			for (int i = 0, len = l; i < len; i++) {
-				object = (JSONObject) array.get(i);
-				attr = object.getString("attr").split(",");
-				int attrlength = attr.length;
-				if (attrlength != 0 && !attr[0].equals("") || attrlength > 1) {
-					for (int j = 0; j < attrlength; j++) {
-						FileInfoObj = (JSONObject) fileObj.get(attr[j]);
-						FileInfoObj.remove("_id");
-						object.put("attrFile" + j, FileInfoObj);
-						if ("1".equals(FileInfoObj.get("filetype").toString())) {
-							imgList.add("http://" + getAppIp("file").split("/")[1]
-									+ FileInfoObj.get("filepath").toString());
-						}
-						if ("2".equals(FileInfoObj.get("filetype").toString())) {
-							videoList.add("http://" + getAppIp("file").split("/")[1]
-									+ FileInfoObj.get("filepath").toString());
-						}
+		imgList = new ArrayList<String>();
+		videoList = new ArrayList<String>();
+		attr = object.getString("attr").split(",");
+		int attrlength = attr.length;
+		if (attrlength != 0 && !attr[0].equals("") || attrlength > 1) {
+			for (int j = 0; j < attrlength; j++) {
+				FileInfoObj = (JSONObject) FileObj.get(attr[j]);
+				if (FileInfoObj != null && FileInfoObj.size() != 0) {
+					attrlist = "http://" + FileHost(1) + FileInfoObj.get("filepath").toString();
+					filetype = FileInfoObj.get("filetype").toString();
+					object.put("attrFile" + j, FileInfoObj);
+					if ("1".equals(filetype)) {
+						imgList.add(attrlist);
+					}
+					if ("2".equals(filetype)) {
+						videoList.add(attrlist);
 					}
 				}
-				if (object.containsKey("mediaid")) {
-					liStrings = getMedia(liStrings, object.get("mediaid").toString());
-				}
-				object.put("image", imgList.size() != 0 ? StringHelper.join(imgList) : "");
-				object.put("video", videoList.size() != 0 ? StringHelper.join(videoList) : "");
-				object.put("media", liStrings.size() != 0 ? StringHelper.join(liStrings) : "");
-				if (object.containsKey("type")) {
-					object = getType(object);
-				}
-				array.set(i, object);
 			}
 		}
-		return array;
+		object.put("image", imgList.size() != 0 ? StringHelper.join(imgList) : "");
+		object.put("video", videoList.size() != 0 ? StringHelper.join(videoList) : "");
+		return object;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -1400,8 +1474,7 @@ public class ReportModel {
 		if (("").equals(mediaid)) {
 			return list;
 		}
-		String message = appsProxy.proxyCall("/GrapeWechat/Wechat/downloadMedia/" + mediaid)
-				.toString();
+		String message = appsProxy.proxyCall("/GrapeWechat/Wechat/downloadMedia/" + mediaid, null, null).toString();
 		if (JSONHelper.string2json(message) != null) {
 			String url = JSONHelper.string2json(message).get("message").toString();
 			url = outerHost() + url;
@@ -1473,7 +1546,7 @@ public class ReportModel {
 					fileInfo = cache.get(imgid).toString();
 				} else {
 					// 获取文件对象getAppIp("file")
-					fileInfo = appsProxy.proxyCall("/GrapeReport/Files/getFile/" + imgid).toString();
+					fileInfo = appsProxy.proxyCall("/GrapeReport/Files/getFile/" + imgid, null, null).toString();
 					if (!("").equals(fileInfo) && fileInfo != null) {
 						fileInfo = JSONHelper.string2json(fileInfo).get("message").toString();
 						cache.setget(imgid, fileInfo);
@@ -1587,7 +1660,7 @@ public class ReportModel {
 		if (cache.get(openid + "Info") != null) {
 			info = cache.get(openid + "Info").toString();
 		} else {
-			info = appsProxy.proxyCall("/GrapeWechat/wechatUser/FindOpenId/" + openid).toString();
+			info = appsProxy.proxyCall("/GrapeWechat/wechatUser/FindOpenId/" + openid, null, null).toString();
 			cache.setget(openid + "Info", info);
 		}
 		JSONObject object2 = JSONHelper.string2json(info);
@@ -1614,7 +1687,8 @@ public class ReportModel {
 					newimg.replaceAll("=", "@m");
 				}
 				object.put("headimgurl", newimg);
-				appsProxy.proxyCall("/GrapeUser/wechatUser/UpdateInfo/s:" + openid + "/s:" + object.toString()).toString();
+				appsProxy.proxyCall("/GrapeUser/wechatUser/UpdateInfo/s:" + openid + "/s:" + object.toString(), null,
+						null).toString();
 			}
 			obj = FindByopenid(openid);
 		} catch (Exception e) {
@@ -1629,9 +1703,7 @@ public class ReportModel {
 	private JSONObject getHeadurl(String openid) {
 		JSONObject object = new JSONObject();
 		try {
-			String userinfo = appsProxy
-					.proxyCall("/GrapeWechat/Wechat/getUserInfo/s:" + openid, null, "")
-					.toString();
+			String userinfo = appsProxy.proxyCall("/GrapeWechat/Wechat/getUserInfo/s:" + openid, null, "").toString();
 			if (JSONHelper.string2json(userinfo) != null) {
 				String message = JSONHelper.string2json(userinfo).get("message").toString();
 				String records = JSONHelper.string2json(message).get("records").toString();

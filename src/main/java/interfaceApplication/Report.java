@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import org.json.simple.JSONObject;
 
 import apps.appsProxy;
+import database.db;
 import json.JSONHelper;
 import model.ReportModel;
 import rpc.execRequest;
@@ -47,9 +48,44 @@ public class Report {
 		map.put("refusetime", "");
 		map.put("Rgroup", "");
 		map.put("wbid", (UserInfo != null && UserInfo.size() != 0) ? UserInfo.get("currentWeb").toString() : "");
-//		 map.put("wbid", "595a2594189ad9c9223fab7d");   //举报系统
+		// map.put("wbid", "595a2594189ad9c9223fab7d"); //举报系统
 		map.put("priority", 1);
 		map.put("slevel", 1);
+		map.put("InformantSex", 0);
+	}
+
+	/**
+	 * 待处理举报件统计
+	 * 
+	 * @project GrapeSuggest
+	 * @package interfaceApplication
+	 * @file Suggest.java
+	 * 
+	 * @return
+	 *
+	 */
+	public String CountReport() {
+		String wbid = "";
+		long count = 0;
+		int role = model.getRoleSign();
+		db db = model.getDB().eq("state", 0);
+		// 获取角色权限
+		if (role == 6 || role == 5 || role == 4) {
+			count = db.count();
+		}
+		if (role == 3 || role == 2) {
+			wbid = (String) UserInfo.get("currentWeb");
+		}
+		if (!wbid.equals("")) {
+			if (!wbid.equals("")) {
+				// if (!wbid.equals("594335af1a4769cbf5d04180")) {
+				count = db.eq("wbid", wbid).count();
+				// }else{
+				// count = db.count();
+				// }
+			}
+		}
+		return model.resultMessage(0, String.valueOf(count));
 	}
 
 	// 新增
@@ -96,6 +132,14 @@ public class Report {
 	public String PageBy(int ids, int pageSize, String info) {
 		return model.PageBy(ids, pageSize, info);
 	}
+
+//	public String PageReportBack(int idx,int pageSize) {
+//		return PageByReportBack(idx,pageSize,null);
+//	}
+//
+//	public String PageByReportBack(int idx,int pageSize,String condString) {
+//		return model.PageBy(idx, pageSize, condString);
+//	}
 
 	// 批量查询
 	public String BatchSelect(String info, int no) {
@@ -149,6 +193,10 @@ public class Report {
 	// 查询个人相关的举报件
 	public String searchById(String userid, int no) {
 		return model.search(userid, no);
+	}
+
+	public String showByUser(int idx, int pageSize) {
+		return model.show(idx, pageSize);
 	}
 
 	// 查询个人相关的举报件,显示_id,content,time
