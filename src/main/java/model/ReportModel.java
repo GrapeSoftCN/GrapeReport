@@ -1784,15 +1784,6 @@ public class ReportModel {
 			String content = (String) object.get("content");
 			content = codec.DecodeHtmlTag(content);
 			content = codec.decodebase64(content);
-			// String key = appsProxy
-			// .proxyCall(callHost(), appsProxy.appid() +
-			// "/106/KeyWords/CheckKeyWords/" + content, null, "")
-			// .toString();
-			// JSONObject keywords = JSONHelper.string2json(key);
-			// long codes = (Long) keywords.get("errorcode");
-			// if (codes == 3) {
-			// return resultMessage(3);
-			// }
 			object.put("content", content);
 			result = add(object);
 		} catch (Exception e) {
@@ -1807,16 +1798,31 @@ public class ReportModel {
 		String result = resultMessage(99);
 		int mode = Integer.parseInt(object.get("mode").toString());
 		try {
-			if (mode == 1) {
-				// 实名验证,发送短信验证码
-				result = Real(object);
-			} else {
+			switch (mode) {
+			case 0:
 				object.put("content", codec.encodebase64(object.get("content").toString()));
 				result = insert(object.toString());
+				break;
+			case 1:
+				result = Real(object);
+				break;
+			case 2:
+				result = WebAnonymous(object);
+				break;
 			}
 		} catch (Exception e) {
 			nlogger.logout(e);
 			result = resultMessage(99);
+		}
+		return result;
+	}
+
+	@SuppressWarnings("unchecked")
+	private String WebAnonymous(JSONObject object) {
+		String result = resultMessage(21);
+		if (UserInfo != null || UserInfo.size() != 0) {
+			object.put("content", codec.encodebase64(object.get("content").toString()));
+			result = insert(object.toString());
 		}
 		return result;
 	}
@@ -2002,6 +2008,9 @@ public class ReportModel {
 			break;
 		case 20:
 			msg = "没有该操作权限";
+			break;
+		case 21:
+			msg = "请登录之后进行举报";
 			break;
 		default:
 			msg = "其他操作异常";
